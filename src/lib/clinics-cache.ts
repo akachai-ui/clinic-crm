@@ -127,9 +127,15 @@ export async function saveClinicDeltaUpdate(
   clinicId: string,
   updates: Partial<ClinicLead>
 ): Promise<void> {
+  // Sanitize undefined fields to prevent Firestore "Unsupported field value: undefined" error
+  const sanitizedUpdates: Record<string, any> = {};
+  for (const [key, value] of Object.entries(updates)) {
+    sanitizedUpdates[key] = value === undefined ? "" : value;
+  }
+
   const payload = {
     clinicId,
-    ...updates,
+    ...sanitizedUpdates,
     updatedAt: new Date().toISOString(),
   };
   await setDoc(doc(db, UPDATES_COLLECTION, clinicId), payload, { merge: true });

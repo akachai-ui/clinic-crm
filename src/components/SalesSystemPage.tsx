@@ -414,7 +414,7 @@ export default function SalesSystemPage({
         contactName2: formContact2.trim(),
         notes: formNotes.trim(),
         salesStatus: formSalesStatus,
-        nextFollowUpDate: formNextFollowUp || undefined,
+        nextFollowUpDate: formNextFollowUp.trim() ? formNextFollowUp.trim() : "",
         updatedAt,
       };
 
