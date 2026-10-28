@@ -11,12 +11,20 @@ import {
   MapPin,
   Layers,
   RotateCcw,
-  CheckCircle2,
 } from "lucide-react";
 
 interface SalesSystemPageProps {
   clinics?: ClinicLead[];
   onUpdateClinic?: (id: string, updates: Partial<ClinicLead>) => void;
+}
+
+// Clean helper to format long category names for mobile screens
+function formatCategoryLabel(cat: string): string {
+  if (cat.includes("ทันตกรรม")) return "คลินิกทันตกรรม (Dental)";
+  if (cat.includes("กายภาพบำบัด")) return "คลินิกกายภาพบำบัด (Physical Therapy)";
+  if (cat.includes("เสริมความงาม")) return "คลินิกเสริมความงาม (Aesthetic)";
+  if (cat.includes("เวชกรรม")) return "คลินิกเวชกรรม/เฉพาะทาง (Medical)";
+  return cat;
 }
 
 export default function SalesSystemPage({
@@ -28,27 +36,35 @@ export default function SalesSystemPage({
   const [selectedCategory, setSelectedCategory] = useState<string>("all");
   const [selectedStatus, setSelectedStatus] = useState<string>("all");
 
-  // Province list sorted by clinic count
+  // 1. Cascading Province list: if category is selected, show province counts for that category
   const provinceList = useMemo(() => {
+    const pool =
+      selectedCategory === "all"
+        ? clinics
+        : clinics.filter((c) => (c.category || "ไม่ระบุ") === selectedCategory);
     const map: Record<string, number> = {};
-    clinics.forEach((c) => {
+    pool.forEach((c) => {
       const p = c.province || "ไม่ระบุ";
       map[p] = (map[p] || 0) + 1;
     });
     return Object.entries(map).sort((a, b) => b[1] - a[1]);
-  }, [clinics]);
+  }, [clinics, selectedCategory]);
 
-  // Category list sorted by clinic count
+  // 2. Cascading Category list: if province is selected, show category counts for that province
   const categoryList = useMemo(() => {
+    const pool =
+      selectedProvince === "all"
+        ? clinics
+        : clinics.filter((c) => (c.province || "ไม่ระบุ") === selectedProvince);
     const map: Record<string, number> = {};
-    clinics.forEach((c) => {
+    pool.forEach((c) => {
       const cat = c.category || "ไม่ระบุ";
       map[cat] = (map[cat] || 0) + 1;
     });
     return Object.entries(map).sort((a, b) => b[1] - a[1]);
-  }, [clinics]);
+  }, [clinics, selectedProvince]);
 
-  // Clinics filtered by Province and Category (dynamic baseline for status cards)
+  // 3. Clinics filtered by Province and Category (dynamic baseline for status cards)
   const filteredByProvAndCat = useMemo(() => {
     return clinics.filter((c) => {
       const matchProv =
@@ -59,7 +75,7 @@ export default function SalesSystemPage({
     });
   }, [clinics, selectedProvince, selectedCategory]);
 
-  // Calculate websiteStatus statistics dynamically from filtered clinics
+  // 4. Calculate websiteStatus statistics dynamically from filtered clinics
   const statusStats = useMemo(() => {
     const total = filteredByProvAndCat.length;
     let noWebCount = 0;
@@ -99,6 +115,14 @@ export default function SalesSystemPage({
       opportunityPct,
     };
   }, [filteredByProvAndCat]);
+
+  // 5. Final filtered clinics taking selected websiteStatus card into account
+  const finalFilteredClinics = useMemo(() => {
+    return filteredByProvAndCat.filter((c) => {
+      if (selectedStatus === "all") return true;
+      return (c.websiteStatus || "ไม่ระบุ") === selectedStatus;
+    });
+  }, [filteredByProvAndCat, selectedStatus]);
 
   const cards = [
     {
@@ -157,7 +181,6 @@ export default function SalesSystemPage({
     },
   ];
 
-  const activeCardInfo = cards.find((c) => c.keyMatch === selectedStatus);
   const hasActiveFilter =
     selectedProvince !== "all" ||
     selectedCategory !== "all" ||
@@ -183,11 +206,12 @@ export default function SalesSystemPage({
               สถานะเว็บไซต์และตัวกรองพื้นที่
             </div>
             <h2 className="text-sm sm:text-lg md:text-xl font-black text-white tracking-wide mt-1">
-              สัดส่วนเว็บไซต์คลินิกทั่วไทย
+              สัดส่วนเว็บไซต์คลินิก
+              {selectedProvince !== "all" ? ` จ.${selectedProvince}` : " ทั่วไทย"}
             </h2>
           </div>
 
-          {/* Compact Market Opportunity Badge */}
+          {/* Compact Market Opportunity Badge (Consistent numbers) */}
           <div className="glass-card-3d px-2.5 py-1.5 sm:px-3.5 sm:py-2 rounded-xl flex items-center gap-2 border border-[#2bccaf]/40 bg-[#0c202a]/80 shrink-0">
             <TrendingUp className="w-3.5 h-3.5 text-[#2bccaf] shrink-0" />
             <div className="text-right">
@@ -196,8 +220,8 @@ export default function SalesSystemPage({
               </div>
               <div className="text-xs sm:text-sm font-extrabold text-[#6fffe9] leading-tight">
                 {statusStats.opportunityPct}%{" "}
-                <span className="text-[10px] text-slate-400 font-normal hidden xs:inline">
-                  ({statusStats.opportunityCount.toLocaleString()})
+                <span className="text-[10px] text-slate-400 font-normal">
+                  ({statusStats.opportunityCount}/{statusStats.total})
                 </span>
               </div>
             </div>
@@ -205,14 +229,19 @@ export default function SalesSystemPage({
         </div>
 
         {/* =========================================================================
-            FILTERS: Category & Province (2-Column Mobile Grid, Space-Saving)
+            FILTERS: Category & Province (Cascading dynamic counts)
            ========================================================================= */}
         <div className="grid grid-cols-2 gap-2 sm:gap-3.5">
           {/* Province Filter Dropdown */}
           <div className="space-y-1">
-            <label className="flex items-center gap-1 text-[10px] sm:text-xs font-bold text-slate-300">
-              <MapPin className="w-3 h-3 text-[#2bccaf]" />
-              <span>จังหวัด (Province)</span>
+            <label className="flex items-center justify-between text-[10px] sm:text-xs font-bold text-slate-300">
+              <span className="flex items-center gap-1">
+                <MapPin className="w-3 h-3 text-[#2bccaf]" />
+                จังหวัด
+              </span>
+              <span className="text-[9px] text-slate-400">
+                {selectedCategory !== "all" ? "ในหมวดที่เลือก" : ""}
+              </span>
             </label>
             <div className="relative">
               <select
@@ -221,7 +250,7 @@ export default function SalesSystemPage({
                 className="glass-input-3d w-full rounded-xl px-2.5 sm:px-3 py-2 text-[11px] sm:text-xs font-semibold text-white focus:outline-none appearance-none cursor-pointer pr-7"
               >
                 <option value="all" className="bg-[#091526] text-white">
-                  ทุกจังหวัด ({clinics.length.toLocaleString()})
+                  ทุกจังหวัด ({provinceList.reduce((acc, x) => acc + x[1], 0).toLocaleString()})
                 </option>
                 {provinceList.map(([prov, count]) => (
                   <option
@@ -241,9 +270,14 @@ export default function SalesSystemPage({
 
           {/* Category Filter Dropdown */}
           <div className="space-y-1">
-            <label className="flex items-center gap-1 text-[10px] sm:text-xs font-bold text-slate-300">
-              <Layers className="w-3 h-3 text-[#2bccaf]" />
-              <span>หมวดหมู่ (Category)</span>
+            <label className="flex items-center justify-between text-[10px] sm:text-xs font-bold text-slate-300">
+              <span className="flex items-center gap-1">
+                <Layers className="w-3 h-3 text-[#2bccaf]" />
+                หมวดหมู่
+              </span>
+              <span className="text-[9px] text-slate-400">
+                {selectedProvince !== "all" ? `ใน จ.${selectedProvince}` : ""}
+              </span>
             </label>
             <div className="relative">
               <select
@@ -252,7 +286,7 @@ export default function SalesSystemPage({
                 className="glass-input-3d w-full rounded-xl px-2.5 sm:px-3 py-2 text-[11px] sm:text-xs font-semibold text-white focus:outline-none appearance-none cursor-pointer pr-7"
               >
                 <option value="all" className="bg-[#091526] text-white">
-                  ทุกหมวดหมู่ ({clinics.length.toLocaleString()})
+                  ทุกหมวดหมู่ ({categoryList.reduce((acc, x) => acc + x[1], 0).toLocaleString()})
                 </option>
                 {categoryList.map(([cat, count]) => (
                   <option
@@ -260,7 +294,7 @@ export default function SalesSystemPage({
                     value={cat}
                     className="bg-[#091526] text-white"
                   >
-                    {cat.length > 28 ? `${cat.substring(0, 28)}...` : cat} ({count.toLocaleString()})
+                    {formatCategoryLabel(cat)} ({count.toLocaleString()})
                   </option>
                 ))}
               </select>
@@ -342,7 +376,7 @@ export default function SalesSystemPage({
         </div>
 
         {/* =========================================================================
-            Active Filter & Selection Strip (with Reset Button)
+            Accurate, Consistent Result Strip (100% Matches Card & Filter Selection)
            ========================================================================= */}
         {hasActiveFilter ? (
           <div className="glass-card-3d p-2 sm:p-2.5 rounded-xl flex items-center justify-between gap-2 text-xs border border-[#2bccaf]/40 bg-[#2bccaf]/10 animate-in fade-in duration-200">
@@ -350,18 +384,27 @@ export default function SalesSystemPage({
               <span className="w-2 h-2 rounded-full bg-[#2bccaf] shrink-0 shadow-[0_0_8px_#2bccaf]" />
               <div className="truncate text-slate-300">
                 <span className="font-bold text-white">
-                  ผลลัพธ์: {statusStats.total.toLocaleString()} คลินิก
+                  ผลลัพธ์: {finalFilteredClinics.length.toLocaleString()} คลินิก
                 </span>
+                {selectedStatus !== "all" && (
+                  <span className="ml-1 text-amber-300 font-semibold">
+                    ({selectedStatus})
+                  </span>
+                )}
                 {selectedProvince !== "all" && (
-                  <span className="ml-1 text-[#6fffe9]">({selectedProvince})</span>
+                  <span className="ml-1 text-[#6fffe9]">
+                    ใน จ.{selectedProvince}
+                  </span>
                 )}
                 {selectedCategory !== "all" && (
                   <span className="ml-1 text-slate-300 hidden sm:inline">
-                    • {selectedCategory.split(" ")[0]}
+                    • {formatCategoryLabel(selectedCategory).split(" ")[0]}
                   </span>
                 )}
                 {selectedStatus !== "all" && (
-                  <span className="ml-1 text-amber-300">• {selectedStatus}</span>
+                  <span className="ml-1 text-slate-400 text-[9px] sm:text-[10px]">
+                    (จากทั้งหมด {statusStats.total} คลินิก)
+                  </span>
                 )}
               </div>
             </div>
