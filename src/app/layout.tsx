@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Noto_Sans_Thai } from "next/font/google";
 import "./globals.css";
 
@@ -10,6 +10,19 @@ const notoSansThai = Noto_Sans_Thai({
 export const metadata: Metadata = {
   title: "Clinic CRM — ระบบบริหารจัดการข้อมูลคลินิก",
   description: "ระบบ CRM สำหรับจัดการข้อมูลคลินิกทันตกรรม ความงาม และเวชกรรม",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "black-translucent",
+    title: "Clinic CRM",
+  },
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 5,
+  viewportFit: "cover",
+  themeColor: "#060d18",
 };
 
 export default function RootLayout({
@@ -18,8 +31,10 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="th">
-      <body className={notoSansThai.className}>{children}</body>
+    <html lang="th" className="h-full">
+      <body className={`${notoSansThai.className} min-h-full antialiased`}>
+        {children}
+      </body>
     </html>
   );
 }
