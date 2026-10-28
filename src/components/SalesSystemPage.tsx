@@ -138,6 +138,7 @@ export default function SalesSystemPage({
   const [formNextFollowUp, setFormNextFollowUp] = useState<string>("");
   const [isSaving, setIsSaving] = useState<boolean>(false);
   const [saveSuccess, setSaveSuccess] = useState<boolean>(false);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   // Fast shortcut to set follow-up date (e.g. +1, +3, +7 days from today)
   const setFollowUpDaysFromNow = (days: number) => {
@@ -345,9 +346,17 @@ export default function SalesSystemPage({
       setEditingClinic((prev) => (prev ? { ...prev, ...updates } : null));
 
       setSaveSuccess(true);
+      const savedClinicName = editingClinic.name;
+
+      // Close modal and bounce back to list after brief 500ms visual confirmation
       setTimeout(() => {
+        setEditingClinic(null);
         setSaveSuccess(false);
-      }, 3000);
+        setToastMessage(`บันทึกข้อมูล "${savedClinicName}" เรียบร้อยแล้ว`);
+        setTimeout(() => {
+          setToastMessage(null);
+        }, 3500);
+      }, 500);
     } catch (err) {
       console.error("Failed to save CRM record:", err);
     } finally {
@@ -1215,6 +1224,14 @@ export default function SalesSystemPage({
               </div>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Floating Success Toast Notification when returned to main list */}
+      {toastMessage && (
+        <div className="fixed bottom-20 sm:bottom-6 left-1/2 -translate-x-1/2 z-[999] px-4 py-2.5 rounded-2xl bg-[#031d19]/95 text-[#6fffe9] border border-[#2bccaf]/70 shadow-[0_4px_25px_rgba(43,204,175,0.45)] backdrop-blur-md flex items-center gap-2.5 text-xs sm:text-sm font-bold animate-in fade-in slide-in-from-bottom-4 duration-300 pointer-events-none">
+          <CheckCircle2 className="w-4 h-4 text-[#2bccaf] shrink-0" />
+          <span className="truncate max-w-[280px] sm:max-w-md">{toastMessage}</span>
         </div>
       )}
     </div>
