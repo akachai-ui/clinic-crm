@@ -20,8 +20,8 @@ export default function HomePage() {
   const [syncingFirebase, setSyncingFirebase] = useState(false);
   const [deltaReadsUsed, setDeltaReadsUsed] = useState<number>(0);
 
-  // Default to Sales Presentation ("presentation") as the primary main page
-  const [activePage, setActivePage] = useState<"presentation" | "crm">("presentation");
+  // Default to Sales CRM System ("crm") as the primary focus page
+  const [activePage, setActivePage] = useState<"presentation" | "crm">("crm");
 
   useEffect(() => {
     async function initClinics() {
