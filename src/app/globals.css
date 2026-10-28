@@ -1,0 +1,169 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --primary-neon: #2bccaf;
+  --primary-neon-glow: rgba(43, 204, 175, 0.45);
+  --primary-neon-soft: rgba(43, 204, 175, 0.15);
+}
+
+body {
+  background-color: #060d18;
+  background-image: 
+    radial-gradient(circle at 15% 15%, rgba(43, 204, 175, 0.16) 0%, transparent 40%),
+    radial-gradient(circle at 85% 20%, rgba(20, 184, 166, 0.12) 0%, transparent 45%),
+    radial-gradient(circle at 50% 85%, rgba(43, 204, 175, 0.1) 0%, transparent 50%),
+    linear-gradient(180deg, #060d18 0%, #0a1526 50%, #050b14 100%);
+  background-attachment: fixed;
+  color: #ecfdf5;
+  @apply antialiased selection:bg-[#2bccaf]/30 selection:text-[#2bccaf];
+}
+
+/* Subtle futuristic cyber grid overlay */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  background-image: 
+    linear-gradient(to right, rgba(43, 204, 175, 0.04) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(43, 204, 175, 0.04) 1px, transparent 1px);
+  background-size: 48px 48px;
+  pointer-events: none;
+  z-index: -1;
+}
+
+@layer components {
+  /* 3D Glassmorphism Main Panel */
+  .glass-panel-3d {
+    background: linear-gradient(
+      145deg,
+      rgba(15, 29, 48, 0.72) 0%,
+      rgba(9, 19, 34, 0.82) 100%
+    );
+    backdrop-filter: blur(22px) saturate(180%);
+    -webkit-backdrop-filter: blur(22px) saturate(180%);
+    border: 1px solid rgba(43, 204, 175, 0.24);
+    box-shadow:
+      0 22px 50px -12px rgba(0, 0, 0, 0.75),
+      0 0 30px -8px rgba(43, 204, 175, 0.14),
+      inset 0 1px 1px 0 rgba(255, 255, 255, 0.18),
+      inset 0 -2px 6px 0 rgba(43, 204, 175, 0.08);
+  }
+
+  /* 3D Floating Interactive Glass Card */
+  .glass-card-3d {
+    background: linear-gradient(
+      155deg,
+      rgba(20, 38, 62, 0.65) 0%,
+      rgba(10, 22, 38, 0.78) 100%
+    );
+    backdrop-filter: blur(16px) saturate(160%);
+    -webkit-backdrop-filter: blur(16px) saturate(160%);
+    border: 1px solid rgba(43, 204, 175, 0.2);
+    box-shadow:
+      0 14px 30px -8px rgba(0, 0, 0, 0.65),
+      0 4px 0 0 rgba(12, 52, 49, 0.7),
+      inset 0 1px 1px 0 rgba(255, 255, 255, 0.16);
+    transition: all 0.25s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  .glass-card-3d:hover {
+    transform: translateY(-4px);
+    border-color: rgba(43, 204, 175, 0.55);
+    box-shadow:
+      0 20px 38px -8px rgba(0, 0, 0, 0.75),
+      0 6px 0 0 rgba(43, 204, 175, 0.35),
+      0 0 25px -2px rgba(43, 204, 175, 0.25),
+      inset 0 1px 2px 0 rgba(255, 255, 255, 0.28);
+  }
+
+  /* Active/Selected 3D Card in #2bccaf */
+  .glass-card-3d-active {
+    background: linear-gradient(
+      145deg,
+      rgba(43, 204, 175, 0.25) 0%,
+      rgba(15, 58, 56, 0.85) 100%
+    );
+    backdrop-filter: blur(18px);
+    border: 1px solid #2bccaf;
+    box-shadow:
+      0 18px 36px -6px rgba(0, 0, 0, 0.75),
+      0 4px 0 0 #157a68,
+      0 0 30px 0 rgba(43, 204, 175, 0.35),
+      inset 0 1px 2px 0 rgba(255, 255, 255, 0.35);
+    transform: translateY(-2px);
+  }
+
+  /* 3D Neon Button (#2bccaf) */
+  .btn-neon-3d {
+    background: linear-gradient(135deg, #38e2c4 0%, #2bccaf 50%, #1ea38b 100%);
+    color: #041f1b;
+    font-weight: 800;
+    border: 1px solid rgba(255, 255, 255, 0.35);
+    box-shadow:
+      0 4px 0 0 #116b5b,
+      0 10px 24px -4px rgba(43, 204, 175, 0.5),
+      inset 0 1px 1px 0 rgba(255, 255, 255, 0.6);
+    transition: all 0.18s ease;
+  }
+
+  .btn-neon-3d:hover {
+    transform: translateY(-2px);
+    box-shadow:
+      0 6px 0 0 #116b5b,
+      0 14px 30px -2px rgba(43, 204, 175, 0.65),
+      inset 0 1px 2px 0 rgba(255, 255, 255, 0.75);
+    filter: brightness(1.05);
+  }
+
+  .btn-neon-3d:active {
+    transform: translateY(2px);
+    box-shadow:
+      0 2px 0 0 #116b5b,
+      0 6px 14px -2px rgba(43, 204, 175, 0.4);
+  }
+
+  /* Futuristic Glass Input / Select */
+  .glass-input-3d {
+    background: rgba(8, 18, 32, 0.75);
+    backdrop-filter: blur(12px);
+    border: 1px solid rgba(43, 204, 175, 0.28);
+    color: #f0fdf9;
+    box-shadow:
+      inset 0 2px 6px rgba(0, 0, 0, 0.55),
+      0 1px 0 rgba(255, 255, 255, 0.08);
+    transition: all 0.2s ease;
+  }
+
+  .glass-input-3d:focus {
+    outline: none;
+    border-color: #2bccaf;
+    box-shadow:
+      0 0 0 3px rgba(43, 204, 175, 0.22),
+      0 0 18px rgba(43, 204, 175, 0.25),
+      inset 0 2px 6px rgba(0, 0, 0, 0.55);
+  }
+}
+
+/* Custom Futuristic Scrollbar */
+::-webkit-scrollbar {
+  width: 7px;
+  height: 7px;
+}
+
+::-webkit-scrollbar-track {
+  background: rgba(8, 18, 32, 0.6);
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, #2bccaf 0%, #15806c 100%);
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #3be2c4;
+}
+
+
