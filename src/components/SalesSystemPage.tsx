@@ -30,6 +30,9 @@ import {
   ClipboardEdit,
   Clock,
   Loader2,
+  Calendar,
+  CalendarClock,
+  AlertCircle,
 } from "lucide-react";
 
 interface SalesSystemPageProps {
@@ -44,6 +47,42 @@ function formatCategoryLabel(cat: string): string {
   if (cat.includes("เสริมความงาม")) return "คลินิกเสริมความงาม";
   if (cat.includes("เวชกรรม")) return "คลินิกเวชกรรม/เฉพาะทาง";
   return cat;
+}
+
+// Helper to format short Thai date (e.g. 29 ต.ค. 69)
+function formatThaiDateShort(dateStr?: string): string {
+  if (!dateStr) return "";
+  try {
+    const d = new Date(dateStr);
+    if (Number.isNaN(d.getTime())) return dateStr;
+    return d.toLocaleDateString("th-TH", {
+      day: "numeric",
+      month: "short",
+      year: "2-digit",
+    });
+  } catch {
+    return dateStr;
+  }
+}
+
+// Helper to check follow-up urgency
+function getFollowUpUrgency(
+  dateStr?: string
+): "today" | "overdue" | "upcoming" | "none" {
+  if (!dateStr) return "none";
+  try {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const target = new Date(dateStr);
+    target.setHours(0, 0, 0, 0);
+    const diffTime = target.getTime() - today.getTime();
+    const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
+    if (diffDays < 0) return "overdue";
+    if (diffDays === 0) return "today";
+    return "upcoming";
+  } catch {
+    return "upcoming";
+  }
 }
 
 const SALES_STATUS_OPTIONS = [
@@ -96,8 +135,19 @@ export default function SalesSystemPage({
   const [formContact2, setFormContact2] = useState<string>("");
   const [formNotes, setFormNotes] = useState<string>("");
   const [formSalesStatus, setFormSalesStatus] = useState<string>("ยังไม่ได้ติดต่อ");
+  const [formNextFollowUp, setFormNextFollowUp] = useState<string>("");
   const [isSaving, setIsSaving] = useState<boolean>(false);
   const [saveSuccess, setSaveSuccess] = useState<boolean>(false);
+
+  // Fast shortcut to set follow-up date (e.g. +1, +3, +7 days from today)
+  const setFollowUpDaysFromNow = (days: number) => {
+    const d = new Date();
+    d.setDate(d.getDate() + days);
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, "0");
+    const dd = String(d.getDate()).padStart(2, "0");
+    setFormNextFollowUp(`${yyyy}-${mm}-${dd}`);
+  };
 
   // Lock background scroll when CRM modal is open
   useEffect(() => {
@@ -257,6 +307,7 @@ export default function SalesSystemPage({
     setFormContact2(clinic.contactName2 || "");
     setFormNotes(clinic.notes || "");
     setFormSalesStatus(clinic.salesStatus || "ยังไม่ได้ติดต่อ");
+    setFormNextFollowUp(clinic.nextFollowUpDate || "");
     setSaveSuccess(false);
   };
 
@@ -278,6 +329,7 @@ export default function SalesSystemPage({
         contactName2: formContact2.trim(),
         notes: formNotes.trim(),
         salesStatus: formSalesStatus,
+        nextFollowUpDate: formNextFollowUp || undefined,
         updatedAt,
       };
 
@@ -665,8 +717,12 @@ export default function SalesSystemPage({
                 SALES_STATUS_OPTIONS.find((o) => o.label === currentSalesStatus) ||
                 SALES_STATUS_OPTIONS[0];
 
+              const followUpUrgency = getFollowUpUrgency(clinic.nextFollowUpDate);
               const hasCRMData =
-                clinic.contactName1 || clinic.contactName2 || clinic.notes;
+                clinic.contactName1 ||
+                clinic.contactName2 ||
+                clinic.notes ||
+                clinic.nextFollowUpDate;
 
               return (
                 <div
@@ -687,6 +743,34 @@ export default function SalesSystemPage({
                           />
                           {currentSalesStatus}
                         </span>
+
+                        {/* Scheduled Follow-up Badge (if set) */}
+                        {clinic.nextFollowUpDate && (
+                          <span
+                            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full border font-bold ${
+                              followUpUrgency === "today"
+                                ? "bg-amber-500/25 text-amber-200 border-amber-400/60 animate-pulse shadow-[0_0_10px_rgba(251,191,36,0.3)]"
+                                : followUpUrgency === "overdue"
+                                ? "bg-rose-500/25 text-rose-200 border-rose-400/60"
+                                : "bg-cyan-500/20 text-cyan-200 border-cyan-400/40"
+                            }`}
+                          >
+                            {followUpUrgency === "today" ? (
+                              <CalendarClock className="w-2.5 h-2.5 text-amber-300" />
+                            ) : followUpUrgency === "overdue" ? (
+                              <AlertCircle className="w-2.5 h-2.5 text-rose-300" />
+                            ) : (
+                              <Calendar className="w-2.5 h-2.5 text-cyan-300" />
+                            )}
+                            <span>
+                              {followUpUrgency === "today"
+                                ? `ติดตาม: วันนี้ (${formatThaiDateShort(clinic.nextFollowUpDate)})`
+                                : followUpUrgency === "overdue"
+                                ? `เกินกำหนด (${formatThaiDateShort(clinic.nextFollowUpDate)})`
+                                : `นัดติดตาม ${formatThaiDateShort(clinic.nextFollowUpDate)}`}
+                            </span>
+                          </span>
+                        )}
 
                         {/* Website Status Badge */}
                         {isNoWeb ? (
@@ -734,7 +818,7 @@ export default function SalesSystemPage({
 
                       {/* Saved CRM Details Preview (If already logged) */}
                       {hasCRMData && (
-                        <div className="mt-2 p-2 rounded-xl bg-[#06101c]/80 border border-[#2bccaf]/25 text-xs space-y-1">
+                        <div className="mt-2 p-2 rounded-xl bg-[#06101c]/80 border border-[#2bccaf]/25 text-xs space-y-1.5">
                           <div className="flex flex-wrap items-center gap-3 text-[11px]">
                             {clinic.contactName1 && (
                               <span className="inline-flex items-center gap-1 text-[#6fffe9] font-semibold">
@@ -746,6 +830,23 @@ export default function SalesSystemPage({
                               <span className="inline-flex items-center gap-1 text-slate-300 font-medium">
                                 <Users className="w-3 h-3 text-cyan-400" />
                                 <strong>ผู้ติดต่อ 2:</strong> {clinic.contactName2}
+                              </span>
+                            )}
+                            {clinic.nextFollowUpDate && (
+                              <span
+                                className={`inline-flex items-center gap-1 font-bold ${
+                                  followUpUrgency === "today"
+                                    ? "text-amber-300"
+                                    : followUpUrgency === "overdue"
+                                    ? "text-rose-300"
+                                    : "text-cyan-300"
+                                }`}
+                              >
+                                <CalendarClock className="w-3 h-3 text-[#2bccaf]" />
+                                <strong>นัดติดตาม:</strong>{" "}
+                                {formatThaiDateShort(clinic.nextFollowUpDate)}
+                                {followUpUrgency === "today" && " (วันนี้!)"}
+                                {followUpUrgency === "overdue" && " (เลยกำหนด)"}
                               </span>
                             )}
                           </div>
@@ -984,7 +1085,66 @@ export default function SalesSystemPage({
                 />
               </div>
 
-              {/* Form Field 4: Details & Notes */}
+              {/* Form Field 4: Next Follow-up Date & Quick Shortcuts */}
+              <div className="space-y-1.5 p-3 rounded-xl bg-white/[0.03] border border-white/10">
+                <div className="flex items-center justify-between gap-2">
+                  <label className="flex items-center gap-1.5 text-xs font-bold text-slate-200">
+                    <CalendarClock className="w-3.5 h-3.5 text-[#2bccaf]" />
+                    <span>วันที่ต้องติดตามรอบถัดไป (Next Follow-up)</span>
+                  </label>
+                  {formNextFollowUp && (
+                    <button
+                      type="button"
+                      onClick={() => setFormNextFollowUp("")}
+                      className="text-[10px] text-rose-400 hover:text-rose-300 underline font-semibold transition-colors"
+                    >
+                      ล้างวันที่
+                    </button>
+                  )}
+                </div>
+
+                <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+                  <input
+                    type="date"
+                    value={formNextFollowUp}
+                    onChange={(e) => setFormNextFollowUp(e.target.value)}
+                    className="glass-input-3d flex-1 px-3 py-2 rounded-xl text-xs text-white [color-scheme:dark] focus:outline-none focus:border-[#2bccaf]"
+                  />
+                  {/* Quick-tap date buttons */}
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => setFollowUpDaysFromNow(1)}
+                      className="px-2.5 py-1.5 rounded-lg bg-white/5 hover:bg-[#2bccaf]/20 hover:text-[#6fffe9] border border-white/10 hover:border-[#2bccaf]/40 text-[11px] font-bold text-slate-300 transition-all active:scale-95"
+                    >
+                      +1 วัน (พรุ่งนี้)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setFollowUpDaysFromNow(3)}
+                      className="px-2.5 py-1.5 rounded-lg bg-white/5 hover:bg-[#2bccaf]/20 hover:text-[#6fffe9] border border-white/10 hover:border-[#2bccaf]/40 text-[11px] font-bold text-slate-300 transition-all active:scale-95"
+                    >
+                      +3 วัน
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setFollowUpDaysFromNow(7)}
+                      className="px-2.5 py-1.5 rounded-lg bg-white/5 hover:bg-[#2bccaf]/20 hover:text-[#6fffe9] border border-white/10 hover:border-[#2bccaf]/40 text-[11px] font-bold text-slate-300 transition-all active:scale-95"
+                    >
+                      +7 วัน
+                    </button>
+                  </div>
+                </div>
+
+                {formNextFollowUp && (
+                  <p className="text-[10px] text-cyan-300 flex items-center gap-1 font-medium">
+                    <Calendar className="w-3 h-3 text-[#2bccaf]" />
+                    <span>นัดหมายวัน: {formatThaiDateShort(formNextFollowUp)}</span>
+                  </p>
+                )}
+              </div>
+
+              {/* Form Field 5: Details & Notes */}
               <div className="space-y-1">
                 <label className="flex items-center gap-1.5 text-xs font-bold text-slate-200">
                   <FileText className="w-3.5 h-3.5 text-[#2bccaf]" />

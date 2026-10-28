@@ -22,6 +22,7 @@ export interface ClinicLead {
   rawProvince?: string;
   contactName1?: string;
   contactName2?: string;
+  nextFollowUpDate?: string;
   updatedAt?: string;
   notes?: string;
 }
