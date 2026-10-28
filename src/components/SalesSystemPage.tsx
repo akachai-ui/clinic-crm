@@ -11,6 +11,15 @@ import {
   MapPin,
   Layers,
   RotateCcw,
+  Search,
+  Phone,
+  ExternalLink,
+  Star,
+  Building2,
+  ArrowUpDown,
+  CheckCircle2,
+  ListFilter,
+  Navigation,
 } from "lucide-react";
 
 interface SalesSystemPageProps {
@@ -27,6 +36,8 @@ function formatCategoryLabel(cat: string): string {
   return cat;
 }
 
+const PAGE_SIZE = 15;
+
 export default function SalesSystemPage({
   clinics = [],
   onUpdateClinic,
@@ -35,6 +46,11 @@ export default function SalesSystemPage({
   const [selectedProvince, setSelectedProvince] = useState<string>("all");
   const [selectedCategory, setSelectedCategory] = useState<string>("all");
   const [selectedStatus, setSelectedStatus] = useState<string>("all");
+
+  // Section 2: Search, Sort, and Pagination States
+  const [searchQuery, setSearchQuery] = useState<string>("");
+  const [sortBy, setSortBy] = useState<"reviews" | "rating" | "name">("reviews");
+  const [visibleCount, setVisibleCount] = useState<number>(PAGE_SIZE);
 
   // 1. Cascading Province list: if category is selected, show province counts for that category
   const provinceList = useMemo(() => {
@@ -116,13 +132,53 @@ export default function SalesSystemPage({
     };
   }, [filteredByProvAndCat]);
 
-  // 5. Final filtered clinics taking selected websiteStatus card into account
+  // 5. Final filtered clinics taking selected websiteStatus card + Search Query into account
   const finalFilteredClinics = useMemo(() => {
-    return filteredByProvAndCat.filter((c) => {
-      if (selectedStatus === "all") return true;
-      return (c.websiteStatus || "ไม่ระบุ") === selectedStatus;
-    });
-  }, [filteredByProvAndCat, selectedStatus]);
+    const q = searchQuery.trim().toLowerCase();
+
+    return filteredByProvAndCat
+      .filter((c) => {
+        // Status filter
+        if (selectedStatus !== "all") {
+          const s = c.websiteStatus || "ไม่ระบุ";
+          if (s !== selectedStatus) return false;
+        }
+
+        // Search query filter (Name, Phone, District)
+        if (q) {
+          const matchName = (c.name || "").toLowerCase().includes(q);
+          const matchPhone = (c.phone || "").toLowerCase().includes(q);
+          const matchDistrict = (c.district || "").toLowerCase().includes(q);
+          const matchCategory = (c.category || "").toLowerCase().includes(q);
+          if (!matchName && !matchPhone && !matchDistrict && !matchCategory) {
+            return false;
+          }
+        }
+
+        return true;
+      })
+      .sort((a, b) => {
+        if (sortBy === "reviews") {
+          return (b.reviewCount || 0) - (a.reviewCount || 0);
+        }
+        if (sortBy === "rating") {
+          return (b.rating || 0) - (a.rating || 0);
+        }
+        if (sortBy === "name") {
+          return (a.name || "").localeCompare(b.name || "", "th");
+        }
+        return 0;
+      });
+  }, [filteredByProvAndCat, selectedStatus, searchQuery, sortBy]);
+
+  // Reset pagination when filters or search change
+  useMemo(() => {
+    setVisibleCount(PAGE_SIZE);
+  }, [selectedProvince, selectedCategory, selectedStatus, searchQuery, sortBy]);
+
+  const displayedClinics = useMemo(() => {
+    return finalFilteredClinics.slice(0, visibleCount);
+  }, [finalFilteredClinics, visibleCount]);
 
   const cards = [
     {
@@ -184,16 +240,18 @@ export default function SalesSystemPage({
   const hasActiveFilter =
     selectedProvince !== "all" ||
     selectedCategory !== "all" ||
-    selectedStatus !== "all";
+    selectedStatus !== "all" ||
+    searchQuery.trim() !== "";
 
   const handleResetFilters = () => {
     setSelectedProvince("all");
     setSelectedCategory("all");
     setSelectedStatus("all");
+    setSearchQuery("");
   };
 
   return (
-    <div className="space-y-3 sm:space-y-5">
+    <div className="space-y-4 sm:space-y-6">
       {/* =========================================================================
           SECTION 1: Filters (Category & Province) + websiteStatus Compact Grid
          ========================================================================= */}
@@ -211,7 +269,7 @@ export default function SalesSystemPage({
             </h2>
           </div>
 
-          {/* Compact Market Opportunity Badge (Consistent numbers) */}
+          {/* Compact Market Opportunity Badge */}
           <div className="glass-card-3d px-2.5 py-1.5 sm:px-3.5 sm:py-2 rounded-xl flex items-center gap-2 border border-[#2bccaf]/40 bg-[#0c202a]/80 shrink-0">
             <TrendingUp className="w-3.5 h-3.5 text-[#2bccaf] shrink-0" />
             <div className="text-right">
@@ -229,7 +287,7 @@ export default function SalesSystemPage({
         </div>
 
         {/* =========================================================================
-            FILTERS: Category & Province (Cascading dynamic counts)
+            FILTERS: Category & Province
            ========================================================================= */}
         <div className="grid grid-cols-2 gap-2 sm:gap-3.5">
           {/* Province Filter Dropdown */}
@@ -306,7 +364,7 @@ export default function SalesSystemPage({
         </div>
 
         {/* =========================================================================
-            3-COLUMN COMPACT GRID (Fits in ONE single row on smartphone)
+            3-COLUMN COMPACT GRID (websiteStatus Cards)
            ========================================================================= */}
         <div className="grid grid-cols-3 gap-2 sm:gap-4 md:gap-5">
           {cards.map((card) => {
@@ -374,52 +432,255 @@ export default function SalesSystemPage({
             );
           })}
         </div>
+      </section>
 
-        {/* =========================================================================
-            Accurate, Consistent Result Strip (100% Matches Card & Filter Selection)
-           ========================================================================= */}
-        {hasActiveFilter ? (
-          <div className="glass-card-3d p-2 sm:p-2.5 rounded-xl flex items-center justify-between gap-2 text-xs border border-[#2bccaf]/40 bg-[#2bccaf]/10 animate-in fade-in duration-200">
-            <div className="flex items-center gap-1.5 min-w-0 text-[10px] sm:text-xs">
-              <span className="w-2 h-2 rounded-full bg-[#2bccaf] shrink-0 shadow-[0_0_8px_#2bccaf]" />
-              <div className="truncate text-slate-300">
-                <span className="font-bold text-white">
-                  ผลลัพธ์: {finalFilteredClinics.length.toLocaleString()} คลินิก
-                </span>
-                {selectedStatus !== "all" && (
-                  <span className="ml-1 text-amber-300 font-semibold">
-                    ({selectedStatus})
-                  </span>
-                )}
-                {selectedProvince !== "all" && (
-                  <span className="ml-1 text-[#6fffe9]">
-                    ใน จ.{selectedProvince}
-                  </span>
-                )}
-                {selectedCategory !== "all" && (
-                  <span className="ml-1 text-slate-300 hidden sm:inline">
-                    • {formatCategoryLabel(selectedCategory).split(" ")[0]}
-                  </span>
-                )}
-                {selectedStatus !== "all" && (
-                  <span className="ml-1 text-slate-400 text-[9px] sm:text-[10px]">
-                    (จากทั้งหมด {statusStats.total} คลินิก)
-                  </span>
-                )}
+      {/* =========================================================================
+          SECTION 2: CLINIC LEADS LIST (Display matching selected card)
+         ========================================================================= */}
+      <section className="glass-panel-3d rounded-2xl sm:rounded-3xl p-3 sm:p-5 md:p-7 space-y-3.5 sm:space-y-5">
+        {/* Section 2 Header & Counter */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-[#2bccaf]/20">
+          <div>
+            <div className="flex items-center gap-2">
+              <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-[#2bccaf]/20 text-[#2bccaf] flex items-center justify-center">
+                <ListFilter className="w-4 h-4" />
               </div>
+              <h3 className="text-sm sm:text-lg font-black text-white tracking-wide">
+                รายชื่อคลินิกเป้าหมาย
+              </h3>
+              <span className="px-2 py-0.5 rounded-full text-[10px] sm:text-xs font-extrabold bg-[#2bccaf]/20 text-[#6fffe9] border border-[#2bccaf]/40">
+                {finalFilteredClinics.length.toLocaleString()} รายการ
+              </span>
+            </div>
+            <p className="text-[11px] sm:text-xs text-slate-400 mt-1">
+              {selectedStatus === "all" ? (
+                <span>แสดงทุกสถานะเว็บไซต์</span>
+              ) : (
+                <span>
+                  กรองเฉพาะ:{" "}
+                  <strong className="text-white underline">{selectedStatus}</strong>
+                </span>
+              )}
+              {selectedProvince !== "all" && (
+                <span className="text-[#6fffe9]"> • จ.{selectedProvince}</span>
+              )}
+              {selectedCategory !== "all" && (
+                <span className="text-slate-300">
+                  {" "}
+                  • {formatCategoryLabel(selectedCategory)}
+                </span>
+              )}
+            </p>
+          </div>
+
+          {/* Quick Search & Sort Control */}
+          <div className="flex items-center gap-2 w-full sm:w-auto">
+            {/* Search Input */}
+            <div className="relative flex-1 sm:w-60">
+              <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="ค้นหาชื่อคลินิก, เบอร์โทร..."
+                className="glass-input-3d w-full pl-8 pr-3 py-1.5 sm:py-2 rounded-xl text-xs text-white placeholder-slate-400 focus:outline-none"
+              />
+              {searchQuery && (
+                <button
+                  onClick={() => setSearchQuery("")}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white text-xs"
+                >
+                  ✕
+                </button>
+              )}
             </div>
 
-            <button
-              onClick={handleResetFilters}
-              className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-white/10 hover:bg-white/20 active:scale-95 text-[#6fffe9] font-bold text-[10px] sm:text-xs shrink-0 transition-all"
-            >
-              <RotateCcw className="w-2.5 h-2.5" />
-              <span>ล้างตัวกรอง</span>
-            </button>
+            {/* Sort Selector */}
+            <div className="relative shrink-0">
+              <select
+                value={sortBy}
+                onChange={(e) => setSortBy(e.target.value as any)}
+                className="glass-input-3d pl-2.5 pr-6 py-1.5 sm:py-2 rounded-xl text-[11px] sm:text-xs text-white font-medium focus:outline-none appearance-none cursor-pointer"
+              >
+                <option value="reviews" className="bg-[#091526] text-white">
+                  รีวิวมากสุด
+                </option>
+                <option value="rating" className="bg-[#091526] text-white">
+                  คะแนนสูงสุด
+                </option>
+                <option value="name" className="bg-[#091526] text-white">
+                  ชื่อ ก-ฮ
+                </option>
+              </select>
+              <ArrowUpDown className="w-3 h-3 text-slate-400 pointer-events-none absolute right-2 top-1/2 -translate-y-1/2" />
+            </div>
+
+            {hasActiveFilter && (
+              <button
+                onClick={handleResetFilters}
+                title="ล้างการค้นหาและตัวกรอง"
+                className="p-2 rounded-xl bg-white/10 hover:bg-white/20 active:scale-95 text-[#6fffe9] shrink-0"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Clinic Cards List (Mobile Ergonomic Cards) */}
+        {displayedClinics.length > 0 ? (
+          <div className="space-y-2.5 sm:space-y-3">
+            {displayedClinics.map((clinic, index) => {
+              const s = clinic.websiteStatus || "";
+              const isNoWeb = s.includes("ไม่มี");
+              const isFbLine = s.includes("fb") || s.includes("line");
+              const isHasWeb = s.includes("มีเว็บ");
+
+              return (
+                <div
+                  key={clinic.id || index}
+                  className="glass-card-3d rounded-xl sm:rounded-2xl p-3 sm:p-4 hover:border-[#2bccaf]/60 transition-all group"
+                >
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                    {/* Left: Info & Badges */}
+                    <div className="space-y-1.5 flex-1 min-w-0">
+                      {/* Top Badges */}
+                      <div className="flex flex-wrap items-center gap-1.5 text-[10px]">
+                        {/* Website Status Badge */}
+                        {isNoWeb ? (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-rose-500/20 text-rose-300 border border-rose-500/40 font-bold">
+                            <GlobeLock className="w-2.5 h-2.5" />
+                            ไม่มีเว็บไซต์
+                          </span>
+                        ) : isFbLine ? (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40 font-bold">
+                            <Share2 className="w-2.5 h-2.5" />
+                            ใช้ FB/LINE
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-[#2bccaf]/20 text-[#6fffe9] border border-[#2bccaf]/40 font-bold">
+                            <Globe className="w-2.5 h-2.5" />
+                            มีเว็บไซต์
+                          </span>
+                        )}
+
+                        {/* Category Tag */}
+                        <span className="px-2 py-0.5 rounded-full bg-white/5 text-slate-300 border border-white/10 font-medium">
+                          {formatCategoryLabel(clinic.category || "")}
+                        </span>
+
+                        {/* Location Tag */}
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-slate-800/80 text-slate-300 border border-slate-700">
+                          <MapPin className="w-2.5 h-2.5 text-[#2bccaf]" />
+                          {clinic.district ? `${clinic.district}, ` : ""}
+                          {clinic.province}
+                        </span>
+
+                        {/* Rating Tag */}
+                        {clinic.rating && (
+                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-amber-500/10 text-amber-300 font-bold">
+                            <Star className="w-2.5 h-2.5 fill-amber-400 text-amber-400" />
+                            {clinic.rating} ({clinic.reviewCount || 0})
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Clinic Name */}
+                      <h4 className="text-sm sm:text-base font-extrabold text-white group-hover:text-[#6fffe9] transition-colors leading-snug truncate">
+                        {clinic.name}
+                      </h4>
+
+                      {/* Address preview on desktop */}
+                      {clinic.address && (
+                        <p className="text-[11px] text-slate-400 truncate hidden sm:block">
+                          {clinic.address}
+                        </p>
+                      )}
+                    </div>
+
+                    {/* Right: Quick Sales Action Buttons */}
+                    <div className="flex items-center gap-1.5 sm:gap-2 shrink-0 pt-2 sm:pt-0 border-t sm:border-t-0 border-white/5">
+                      {/* One-Tap Phone Call Button */}
+                      {clinic.phone ? (
+                        <a
+                          href={`tel:${clinic.phone}`}
+                          className="flex-1 sm:flex-initial inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-gradient-to-r from-[#2bccaf]/20 to-[#178a74]/30 hover:from-[#2bccaf] hover:to-[#178a74] text-[#6fffe9] hover:text-[#031d19] border border-[#2bccaf]/40 font-bold text-xs transition-all active:scale-95 shadow-sm"
+                          title={`โทรหา ${clinic.name}`}
+                        >
+                          <Phone className="w-3.5 h-3.5" />
+                          <span>{clinic.phone}</span>
+                        </a>
+                      ) : (
+                        <span className="text-[10px] text-slate-500 px-2 py-1">
+                          ไม่มีเบอร์โทร
+                        </span>
+                      )}
+
+                      {/* Google Maps Button */}
+                      {clinic.googleMapsUrl && (
+                        <a
+                          href={clinic.googleMapsUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="p-2 rounded-xl bg-white/5 hover:bg-white/15 text-slate-300 hover:text-white border border-white/10 transition-all active:scale-95"
+                          title="เปิดแผนที่ Google Maps"
+                        >
+                          <Navigation className="w-3.5 h-3.5 text-[#2bccaf]" />
+                        </a>
+                      )}
+
+                      {/* Web / Social Link Button */}
+                      {clinic.websiteOrLine && (
+                        <a
+                          href={clinic.websiteOrLine}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="p-2 rounded-xl bg-white/5 hover:bg-white/15 text-slate-300 hover:text-white border border-white/10 transition-all active:scale-95"
+                          title="เปิดลิงก์เว็บ/โซเชียล"
+                        >
+                          <ExternalLink className="w-3.5 h-3.5 text-cyan-300" />
+                        </a>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+
+            {/* Load More Button */}
+            {visibleCount < finalFilteredClinics.length && (
+              <div className="pt-2 text-center">
+                <button
+                  onClick={() => setVisibleCount((prev) => prev + PAGE_SIZE)}
+                  className="btn-neon-3d px-5 py-2.5 rounded-xl text-xs font-bold inline-flex items-center gap-2 active:scale-95 transition-all"
+                >
+                  <span>
+                    โหลดเพิ่มอีก {Math.min(PAGE_SIZE, finalFilteredClinics.length - visibleCount)} คลินิก
+                  </span>
+                  <span className="text-[10px] opacity-80">
+                    ({visibleCount}/{finalFilteredClinics.length})
+                  </span>
+                </button>
+              </div>
+            )}
           </div>
         ) : (
-          <div className="text-[10px] sm:text-xs text-slate-400 text-center pt-0.5">
-            เลือกจังหวัด หรือ หมวดหมู่ เพื่อดูสัดส่วนโอกาสขายในพื้นที่
+          /* Empty State */
+          <div className="p-8 rounded-2xl border border-dashed border-[#2bccaf]/30 text-center space-y-3">
+            <Building2 className="w-10 h-10 text-slate-500 mx-auto" />
+            <h4 className="text-sm sm:text-base font-bold text-white">
+              ไม่พบคลิกนิกตามเงื่อนไขที่เลือก
+            </h4>
+            <p className="text-xs text-slate-400 max-w-xs mx-auto">
+              ลองเปลี่ยนคำค้นหา หรือกดล้างตัวกรองเพื่อดูคลินิกทั้งหมด
+            </p>
+            <button
+              onClick={handleResetFilters}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#2bccaf]/20 text-[#6fffe9] border border-[#2bccaf]/40 font-bold text-xs hover:bg-[#2bccaf]/30 transition-all"
+            >
+              <RotateCcw className="w-3 h-3" />
+              ล้างตัวกรองทั้งหมด
+            </button>
           </div>
         )}
       </section>
