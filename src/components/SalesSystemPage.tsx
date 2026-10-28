@@ -2,7 +2,7 @@
 
 import { useState, useMemo, useEffect } from "react";
 import { ClinicLead } from "@/types/clinic";
-import { saveClinicDeltaUpdate } from "@/lib/clinics-cache";
+import { saveClinicDeltaUpdate, deleteClinicDeltaUpdate } from "@/lib/clinics-cache";
 import {
   GlobeLock,
   Share2,
@@ -35,6 +35,7 @@ import {
   AlertCircle,
   Bell,
   BellRing,
+  Trash2,
 } from "lucide-react";
 
 interface SalesSystemPageProps {
@@ -443,6 +444,50 @@ export default function SalesSystemPage({
       }, 500);
     } catch (err) {
       console.error("Failed to save CRM record:", err);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  // Reset / Clear all CRM data for the current clinic
+  const handleResetCRM = async () => {
+    if (!editingClinic) return;
+    if (
+      !confirm(
+        `คุณต้องการลบ/ล้างข้อมูล CRM ทั้งหมดของ "${editingClinic.name}" ใช่หรือไม่?`
+      )
+    ) {
+      return;
+    }
+    try {
+      setIsSaving(true);
+      const clinicName = editingClinic.name;
+      const clinicId = editingClinic.id;
+
+      // 1. Delete from Firebase Firestore clinic_updates collection
+      await deleteClinicDeltaUpdate(clinicId);
+
+      // 2. Clear CRM fields in state & IndexedDB
+      const clearedUpdates: Partial<ClinicLead> = {
+        contactName1: "",
+        contactName2: "",
+        notes: "",
+        salesStatus: "ยังไม่ได้ติดต่อ",
+        nextFollowUpDate: "",
+        updatedAt: undefined,
+      };
+
+      if (onUpdateClinic) {
+        onUpdateClinic(clinicId, clearedUpdates);
+      }
+
+      setEditingClinic(null);
+      setToastMessage(`ล้างข้อมูล "${clinicName}" เรียบร้อยแล้ว`);
+      setTimeout(() => {
+        setToastMessage(null);
+      }, 3500);
+    } catch (err) {
+      console.error("Failed to reset CRM record:", err);
     } finally {
       setIsSaving(false);
     }
@@ -1392,6 +1437,24 @@ export default function SalesSystemPage({
               </div>
 
               <div className="flex items-center gap-2 shrink-0">
+                {(editingClinic.contactName1 ||
+                  editingClinic.contactName2 ||
+                  editingClinic.notes ||
+                  editingClinic.nextFollowUpDate ||
+                  (editingClinic.salesStatus &&
+                    editingClinic.salesStatus !== "ยังไม่ได้ติดต่อ")) && (
+                  <button
+                    type="button"
+                    onClick={handleResetCRM}
+                    disabled={isSaving}
+                    title="ล้างข้อมูล CRM ทั้งหมดของคลินิกนี้"
+                    className="px-2.5 py-2 rounded-xl bg-rose-500/15 hover:bg-rose-500/25 text-rose-300 border border-rose-500/30 text-xs font-bold transition-all active:scale-95 flex items-center gap-1"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span className="hidden xs:inline">ลบข้อมูล</span>
+                  </button>
+                )}
+
                 <button
                   type="button"
                   onClick={handleCloseCRMModal}

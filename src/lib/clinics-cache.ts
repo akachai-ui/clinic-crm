@@ -1,4 +1,4 @@
-import { collection, getDocs, doc, setDoc } from "firebase/firestore";
+import { collection, getDocs, doc, setDoc, deleteDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { ClinicLead } from "@/types/clinic";
 
@@ -74,17 +74,32 @@ export async function loadClinicsWithCache(syncDeltaUpdates = false): Promise<{
 }> {
   let baseClinics: ClinicLead[] = [];
 
-  // 1. Try IndexedDB first (0 Firebase reads)
-  const cached = await getCachedClinicsFromIDB();
-  if (cached && Array.isArray(cached.clinics) && cached.clinics.length > 0) {
-    baseClinics = cached.clinics;
-  } else {
-    // 2. Load from static /data/clinics-master.json (0 Firebase reads, works on any CDN/hosting)
-    const res = await fetch("/data/clinics-master.json");
-    if (!res.ok) {
-      throw new Error("Failed to load /data/clinics-master.json");
+  // When syncing from Firebase, we reload the clean master clinics JSON as the base,
+  // so any records deleted directly from Firestore will accurately be cleared from local cache!
+  if (syncDeltaUpdates) {
+    try {
+      const res = await fetch("/data/clinics-master.json");
+      if (res.ok) {
+        baseClinics = await res.json();
+      }
+    } catch {
+      // Fallback to cache if network fails
     }
-    baseClinics = await res.json();
+  }
+
+  // 1. Try IndexedDB if not already loaded from master json
+  if (baseClinics.length === 0) {
+    const cached = await getCachedClinicsFromIDB();
+    if (cached && Array.isArray(cached.clinics) && cached.clinics.length > 0) {
+      baseClinics = cached.clinics;
+    } else {
+      // 2. Load from static /data/clinics-master.json (0 Firebase reads, works on any CDN/hosting)
+      const res = await fetch("/data/clinics-master.json");
+      if (!res.ok) {
+        throw new Error("Failed to load /data/clinics-master.json");
+      }
+      baseClinics = await res.json();
+    }
   }
 
   let deltaReadsUsed = 0;
@@ -139,4 +154,11 @@ export async function saveClinicDeltaUpdate(
     updatedAt: new Date().toISOString(),
   };
   await setDoc(doc(db, UPDATES_COLLECTION, clinicId), payload, { merge: true });
+}
+
+/**
+ * Deletes a clinic's delta update document from Firestore completely.
+ */
+export async function deleteClinicDeltaUpdate(clinicId: string): Promise<void> {
+  await deleteDoc(doc(db, UPDATES_COLLECTION, clinicId));
 }

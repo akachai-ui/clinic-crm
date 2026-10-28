@@ -27,7 +27,8 @@ export default function HomePage() {
     async function initClinics() {
       try {
         setLoading(true);
-        const result = await loadClinicsWithCache(false);
+        // Automatically sync delta updates on load (low quota cost, always fresh)
+        const result = await loadClinicsWithCache(true);
         setClinics(result.clinics);
         setDeltaReadsUsed(result.deltaReadsUsed);
       } catch (err) {
