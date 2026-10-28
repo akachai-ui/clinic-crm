@@ -20,6 +20,8 @@ export interface ClinicLead {
   rowNumber?: number;
   rawCategory?: string;
   rawProvince?: string;
+  contactName1?: string;
+  contactName2?: string;
   updatedAt?: string;
   notes?: string;
 }

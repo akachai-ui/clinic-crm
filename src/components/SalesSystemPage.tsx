@@ -2,6 +2,7 @@
 
 import { useState, useMemo } from "react";
 import { ClinicLead } from "@/types/clinic";
+import { saveClinicDeltaUpdate } from "@/lib/clinics-cache";
 import {
   GlobeLock,
   Share2,
@@ -20,6 +21,15 @@ import {
   CheckCircle2,
   ListFilter,
   Navigation,
+  User,
+  Users,
+  FileText,
+  Save,
+  Check,
+  X,
+  ClipboardEdit,
+  Clock,
+  Loader2,
 } from "lucide-react";
 
 interface SalesSystemPageProps {
@@ -36,6 +46,34 @@ function formatCategoryLabel(cat: string): string {
   return cat;
 }
 
+const SALES_STATUS_OPTIONS = [
+  {
+    label: "ยังไม่ได้ติดต่อ",
+    color: "bg-slate-700/70 text-slate-300 border-slate-600/60",
+    dot: "bg-slate-400",
+  },
+  {
+    label: "โทรแล้ว / รอตัดสินใจ",
+    color: "bg-amber-500/20 text-amber-300 border-amber-400/50",
+    dot: "bg-amber-400",
+  },
+  {
+    label: "สนใจ / นัดส่งใบเสนอราคา",
+    color: "bg-cyan-500/20 text-cyan-300 border-cyan-400/50",
+    dot: "bg-cyan-400",
+  },
+  {
+    label: "ปิดการขายสำเร็จ (ทำเว็บ)",
+    color: "bg-[#2bccaf]/25 text-[#6fffe9] border-[#2bccaf]",
+    dot: "bg-[#2bccaf]",
+  },
+  {
+    label: "ไม่สนใจ",
+    color: "bg-rose-500/20 text-rose-300 border-rose-400/50",
+    dot: "bg-rose-400",
+  },
+];
+
 const PAGE_SIZE = 15;
 
 export default function SalesSystemPage({
@@ -51,6 +89,15 @@ export default function SalesSystemPage({
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [sortBy, setSortBy] = useState<"reviews" | "rating" | "name">("reviews");
   const [visibleCount, setVisibleCount] = useState<number>(PAGE_SIZE);
+
+  // Section 3: CRM Recording Modal States
+  const [editingClinic, setEditingClinic] = useState<ClinicLead | null>(null);
+  const [formContact1, setFormContact1] = useState<string>("");
+  const [formContact2, setFormContact2] = useState<string>("");
+  const [formNotes, setFormNotes] = useState<string>("");
+  const [formSalesStatus, setFormSalesStatus] = useState<string>("ยังไม่ได้ติดต่อ");
+  const [isSaving, setIsSaving] = useState<boolean>(false);
+  const [saveSuccess, setSaveSuccess] = useState<boolean>(false);
 
   // 1. Cascading Province list: if category is selected, show province counts for that category
   const provinceList = useMemo(() => {
@@ -144,13 +191,24 @@ export default function SalesSystemPage({
           if (s !== selectedStatus) return false;
         }
 
-        // Search query filter (Name, Phone, District)
+        // Search query filter (Name, Phone, District, Contact Names, Notes)
         if (q) {
           const matchName = (c.name || "").toLowerCase().includes(q);
           const matchPhone = (c.phone || "").toLowerCase().includes(q);
           const matchDistrict = (c.district || "").toLowerCase().includes(q);
           const matchCategory = (c.category || "").toLowerCase().includes(q);
-          if (!matchName && !matchPhone && !matchDistrict && !matchCategory) {
+          const matchContact1 = (c.contactName1 || "").toLowerCase().includes(q);
+          const matchContact2 = (c.contactName2 || "").toLowerCase().includes(q);
+          const matchNotes = (c.notes || "").toLowerCase().includes(q);
+          if (
+            !matchName &&
+            !matchPhone &&
+            !matchDistrict &&
+            !matchCategory &&
+            !matchContact1 &&
+            !matchContact2 &&
+            !matchNotes
+          ) {
             return false;
           }
         }
@@ -179,6 +237,59 @@ export default function SalesSystemPage({
   const displayedClinics = useMemo(() => {
     return finalFilteredClinics.slice(0, visibleCount);
   }, [finalFilteredClinics, visibleCount]);
+
+  // Open CRM Modal with clinic data
+  const handleOpenCRMModal = (clinic: ClinicLead) => {
+    setEditingClinic(clinic);
+    setFormContact1(clinic.contactName1 || "");
+    setFormContact2(clinic.contactName2 || "");
+    setFormNotes(clinic.notes || "");
+    setFormSalesStatus(clinic.salesStatus || "ยังไม่ได้ติดต่อ");
+    setSaveSuccess(false);
+  };
+
+  // Close CRM Modal
+  const handleCloseCRMModal = () => {
+    setEditingClinic(null);
+    setSaveSuccess(false);
+  };
+
+  // Save CRM Log to Firebase & State
+  const handleSaveCRM = async () => {
+    if (!editingClinic) return;
+    try {
+      setIsSaving(true);
+      setSaveSuccess(false);
+      const updatedAt = new Date().toISOString();
+      const updates: Partial<ClinicLead> = {
+        contactName1: formContact1.trim(),
+        contactName2: formContact2.trim(),
+        notes: formNotes.trim(),
+        salesStatus: formSalesStatus,
+        updatedAt,
+      };
+
+      // 1. Save to Firebase clinic_updates collection
+      await saveClinicDeltaUpdate(editingClinic.id, updates);
+
+      // 2. Optimistic update to parent state & IndexedDB
+      if (onUpdateClinic) {
+        onUpdateClinic(editingClinic.id, updates);
+      }
+
+      // 3. Update current editing state
+      setEditingClinic((prev) => (prev ? { ...prev, ...updates } : null));
+
+      setSaveSuccess(true);
+      setTimeout(() => {
+        setSaveSuccess(false);
+      }, 3000);
+    } catch (err) {
+      console.error("Failed to save CRM record:", err);
+    } finally {
+      setIsSaving(false);
+    }
+  };
 
   const cards = [
     {
@@ -435,7 +546,7 @@ export default function SalesSystemPage({
       </section>
 
       {/* =========================================================================
-          SECTION 2: CLINIC LEADS LIST (Display matching selected card)
+          SECTION 2: CLINIC LEADS LIST & CRM LOGGING TRIGGER
          ========================================================================= */}
       <section className="glass-panel-3d rounded-2xl sm:rounded-3xl p-3 sm:p-5 md:p-7 space-y-3.5 sm:space-y-5">
         {/* Section 2 Header & Counter */}
@@ -482,7 +593,7 @@ export default function SalesSystemPage({
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="ค้นหาชื่อคลินิก, เบอร์โทร..."
+                placeholder="ค้นหาชื่อคลินิก, ผู้ติดต่อ, เบอร์..."
                 className="glass-input-3d w-full pl-8 pr-3 py-1.5 sm:py-2 rounded-xl text-xs text-white placeholder-slate-400 focus:outline-none"
               />
               {searchQuery && (
@@ -536,16 +647,35 @@ export default function SalesSystemPage({
               const isFbLine = s.includes("fb") || s.includes("line");
               const isHasWeb = s.includes("มีเว็บ");
 
+              const currentSalesStatus =
+                clinic.salesStatus || "ยังไม่ได้ติดต่อ";
+              const statusCfg =
+                SALES_STATUS_OPTIONS.find((o) => o.label === currentSalesStatus) ||
+                SALES_STATUS_OPTIONS[0];
+
+              const hasCRMData =
+                clinic.contactName1 || clinic.contactName2 || clinic.notes;
+
               return (
                 <div
                   key={clinic.id || index}
                   className="glass-card-3d rounded-xl sm:rounded-2xl p-3 sm:p-4 hover:border-[#2bccaf]/60 transition-all group"
                 >
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                  <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
                     {/* Left: Info & Badges */}
                     <div className="space-y-1.5 flex-1 min-w-0">
                       {/* Top Badges */}
                       <div className="flex flex-wrap items-center gap-1.5 text-[10px]">
+                        {/* Sales Status Pill */}
+                        <span
+                          className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full border font-bold ${statusCfg.color}`}
+                        >
+                          <span
+                            className={`w-1.5 h-1.5 rounded-full ${statusCfg.dot}`}
+                          />
+                          {currentSalesStatus}
+                        </span>
+
                         {/* Website Status Badge */}
                         {isNoWeb ? (
                           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-rose-500/20 text-rose-300 border border-rose-500/40 font-bold">
@@ -590,30 +720,44 @@ export default function SalesSystemPage({
                         {clinic.name}
                       </h4>
 
-                      {/* Address preview on desktop */}
-                      {clinic.address && (
-                        <p className="text-[11px] text-slate-400 truncate hidden sm:block">
-                          {clinic.address}
-                        </p>
+                      {/* Saved CRM Details Preview (If already logged) */}
+                      {hasCRMData && (
+                        <div className="mt-2 p-2 rounded-xl bg-[#06101c]/80 border border-[#2bccaf]/25 text-xs space-y-1">
+                          <div className="flex flex-wrap items-center gap-3 text-[11px]">
+                            {clinic.contactName1 && (
+                              <span className="inline-flex items-center gap-1 text-[#6fffe9] font-semibold">
+                                <User className="w-3 h-3 text-[#2bccaf]" />
+                                <strong>ผู้ติดต่อ 1:</strong> {clinic.contactName1}
+                              </span>
+                            )}
+                            {clinic.contactName2 && (
+                              <span className="inline-flex items-center gap-1 text-slate-300 font-medium">
+                                <Users className="w-3 h-3 text-cyan-400" />
+                                <strong>ผู้ติดต่อ 2:</strong> {clinic.contactName2}
+                              </span>
+                            )}
+                          </div>
+                          {clinic.notes && (
+                            <p className="text-[11px] text-slate-300/90 line-clamp-1 italic">
+                              📝 &ldquo;{clinic.notes}&rdquo;
+                            </p>
+                          )}
+                        </div>
                       )}
                     </div>
 
-                    {/* Right: Quick Sales Action Buttons */}
-                    <div className="flex items-center gap-1.5 sm:gap-2 shrink-0 pt-2 sm:pt-0 border-t sm:border-t-0 border-white/5">
+                    {/* Right: Quick Actions & Log CRM Trigger Button */}
+                    <div className="flex flex-wrap items-center gap-2 shrink-0 pt-2 sm:pt-0 border-t sm:border-t-0 border-white/5">
                       {/* One-Tap Phone Call Button */}
-                      {clinic.phone ? (
+                      {clinic.phone && (
                         <a
                           href={`tel:${clinic.phone}`}
-                          className="flex-1 sm:flex-initial inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-gradient-to-r from-[#2bccaf]/20 to-[#178a74]/30 hover:from-[#2bccaf] hover:to-[#178a74] text-[#6fffe9] hover:text-[#031d19] border border-[#2bccaf]/40 font-bold text-xs transition-all active:scale-95 shadow-sm"
+                          className="inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-white/5 hover:bg-white/15 text-slate-200 border border-white/10 font-bold text-xs transition-all active:scale-95"
                           title={`โทรหา ${clinic.name}`}
                         >
-                          <Phone className="w-3.5 h-3.5" />
+                          <Phone className="w-3.5 h-3.5 text-[#2bccaf]" />
                           <span>{clinic.phone}</span>
                         </a>
-                      ) : (
-                        <span className="text-[10px] text-slate-500 px-2 py-1">
-                          ไม่มีเบอร์โทร
-                        </span>
                       )}
 
                       {/* Google Maps Button */}
@@ -641,6 +785,19 @@ export default function SalesSystemPage({
                           <ExternalLink className="w-3.5 h-3.5 text-cyan-300" />
                         </a>
                       )}
+
+                      {/* Main CRM Logging Action Button */}
+                      <button
+                        onClick={() => handleOpenCRMModal(clinic)}
+                        className={`inline-flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-xl font-bold text-xs transition-all active:scale-95 shadow-md ${
+                          hasCRMData
+                            ? "bg-[#2bccaf]/20 hover:bg-[#2bccaf]/30 text-[#6fffe9] border border-[#2bccaf]/50"
+                            : "btn-neon-3d"
+                        }`}
+                      >
+                        <ClipboardEdit className="w-3.5 h-3.5" />
+                        <span>{hasCRMData ? "แก้ไข CRM" : "บันทึกผล"}</span>
+                      </button>
                     </div>
                   </div>
                 </div>
@@ -684,6 +841,189 @@ export default function SalesSystemPage({
           </div>
         )}
       </section>
+
+      {/* =========================================================================
+          SECTION 3: CRM LOGGING MODAL / BOTTOM SHEET (Contact 1-2 & Details)
+         ========================================================================= */}
+      {editingClinic && (
+        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-md flex items-end sm:items-center justify-center p-0 sm:p-4 animate-in fade-in duration-200">
+          <div className="w-full sm:max-w-xl max-h-[92vh] sm:max-h-[85vh] rounded-t-3xl sm:rounded-3xl border border-[#2bccaf]/35 bg-[#081525] p-4 sm:p-6 shadow-2xl flex flex-col space-y-4 overflow-y-auto pb-safe animate-in slide-in-from-bottom-6 duration-250">
+            {/* Modal Header */}
+            <div className="flex items-start justify-between gap-3 pb-3 border-b border-[#2bccaf]/20">
+              <div className="space-y-1 min-w-0">
+                <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-[#2bccaf]/15 border border-[#2bccaf]/30 text-[#2bccaf] text-[10px] sm:text-xs font-bold">
+                  <ClipboardEdit className="w-3 h-3" />
+                  บันทึกข้อมูลการติดต่อ (Sales CRM Log)
+                </div>
+                <h3 className="text-base sm:text-lg font-black text-white truncate leading-snug">
+                  {editingClinic.name}
+                </h3>
+                <p className="text-[11px] text-slate-400 flex items-center gap-2">
+                  <span>{formatCategoryLabel(editingClinic.category || "")}</span>
+                  <span>•</span>
+                  <span>
+                    {editingClinic.district ? `${editingClinic.district}, ` : ""}
+                    {editingClinic.province}
+                  </span>
+                </p>
+              </div>
+
+              {/* Close Button */}
+              <button
+                onClick={handleCloseCRMModal}
+                className="p-1.5 rounded-full bg-white/5 hover:bg-white/15 text-slate-400 hover:text-white transition-all shrink-0"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Quick Call Action Strip */}
+            {editingClinic.phone && (
+              <div className="p-2.5 rounded-2xl bg-[#0d2238] border border-[#2bccaf]/30 flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2 text-xs text-slate-300">
+                  <Phone className="w-4 h-4 text-[#2bccaf]" />
+                  <span>เบอร์คลินิก:</span>
+                  <strong className="text-white font-mono">{editingClinic.phone}</strong>
+                </div>
+                <a
+                  href={`tel:${editingClinic.phone}`}
+                  className="btn-neon-3d px-3 py-1 rounded-xl text-xs font-bold inline-flex items-center gap-1 active:scale-95"
+                >
+                  <Phone className="w-3 h-3" />
+                  <span>โทรออกทันที</span>
+                </a>
+              </div>
+            )}
+
+            {/* Form Field 1: Sales Status Selector */}
+            <div className="space-y-1.5">
+              <label className="block text-xs font-bold text-slate-200">
+                สถานะการขาย (Sales Pipeline Status) <span className="text-[#2bccaf]">*</span>
+              </label>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                {SALES_STATUS_OPTIONS.map((opt) => {
+                  const isSel = formSalesStatus === opt.label;
+                  return (
+                    <button
+                      key={opt.label}
+                      type="button"
+                      onClick={() => setFormSalesStatus(opt.label)}
+                      className={`p-2 rounded-xl text-[11px] font-bold border text-left transition-all flex items-center gap-1.5 active:scale-95 ${
+                        isSel
+                          ? `${opt.color} ring-2 ring-[#2bccaf] shadow-md`
+                          : "bg-white/5 text-slate-400 border-white/10 hover:border-white/20 hover:text-slate-200"
+                      }`}
+                    >
+                      <span className={`w-2 h-2 rounded-full shrink-0 ${opt.dot}`} />
+                      <span className="truncate">{opt.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Form Field 2: Contact Name 1 */}
+            <div className="space-y-1">
+              <label className="flex items-center gap-1.5 text-xs font-bold text-slate-200">
+                <User className="w-3.5 h-3.5 text-[#2bccaf]" />
+                <span>ชื่อผู้ติดต่อ 1 (เจ้าของ / แพทย์ผู้มีอำนาจตัดสินใจ)</span>
+              </label>
+              <input
+                type="text"
+                value={formContact1}
+                onChange={(e) => setFormContact1(e.target.value)}
+                placeholder="เช่น นพ.สมชาย (เจ้าของคลินิก), หมอหญิง"
+                className="glass-input-3d w-full px-3 py-2 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none"
+              />
+            </div>
+
+            {/* Form Field 3: Contact Name 2 */}
+            <div className="space-y-1">
+              <label className="flex items-center gap-1.5 text-xs font-bold text-slate-200">
+                <Users className="w-3.5 h-3.5 text-cyan-400" />
+                <span>ชื่อผู้ติดต่อ 2 (ผู้จัดการคลินิก / ผู้ช่วย / เคาน์เตอร์)</span>
+              </label>
+              <input
+                type="text"
+                value={formContact2}
+                onChange={(e) => setFormContact2(e.target.value)}
+                placeholder="เช่น คุณเมย์ (ผู้จัดการคลินิก / นัดหมาย), พี่แนน"
+                className="glass-input-3d w-full px-3 py-2 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none"
+              />
+            </div>
+
+            {/* Form Field 4: Details & Notes */}
+            <div className="space-y-1">
+              <label className="flex items-center gap-1.5 text-xs font-bold text-slate-200">
+                <FileText className="w-3.5 h-3.5 text-[#2bccaf]" />
+                <span>รายละเอียด (ผลการพูดคุย / ข้อตกลง / นัดหมายติดตามผล)</span>
+              </label>
+              <textarea
+                value={formNotes}
+                onChange={(e) => setFormNotes(e.target.value)}
+                rows={3}
+                placeholder="บันทึกรายละเอียด เช่น สนใจทำเว็บไซต์แพ็กเกจ Pro นัดส่ง Proposal ทางไลน์วันศุกร์นี้..."
+                className="glass-input-3d w-full px-3 py-2 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none resize-none"
+              />
+            </div>
+
+            {/* Success Notification Banner */}
+            {saveSuccess && (
+              <div className="p-2.5 rounded-xl bg-[#2bccaf]/20 border border-[#2bccaf]/60 text-[#6fffe9] text-xs font-bold flex items-center gap-2 animate-in fade-in duration-200">
+                <CheckCircle2 className="w-4 h-4 text-[#2bccaf] shrink-0" />
+                <span>บันทึกข้อมูลผู้ติดต่อและรายละเอียดลงระบบเรียบร้อยแล้ว!</span>
+              </div>
+            )}
+
+            {/* Modal Bottom Actions */}
+            <div className="pt-2 flex items-center justify-between gap-3 border-t border-white/10">
+              <div className="text-[10px] text-slate-400">
+                {editingClinic.updatedAt ? (
+                  <span className="flex items-center gap-1">
+                    <Clock className="w-3 h-3 text-slate-400" />
+                    อัปเดตล่าสุด: {new Date(editingClinic.updatedAt).toLocaleDateString("th-TH")}
+                  </span>
+                ) : (
+                  <span>ยังไม่มีประวัติการบันทึก</span>
+                )}
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleCloseCRMModal}
+                  className="px-3.5 py-2 rounded-xl bg-white/5 hover:bg-white/15 text-slate-300 text-xs font-bold transition-all"
+                >
+                  ปิด
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSaveCRM}
+                  disabled={isSaving}
+                  className="btn-neon-3d px-5 py-2 rounded-xl text-xs font-bold inline-flex items-center gap-1.5 active:scale-95 transition-all disabled:opacity-50"
+                >
+                  {isSaving ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      <span>กำลังบันทึก...</span>
+                    </>
+                  ) : saveSuccess ? (
+                    <>
+                      <Check className="w-3.5 h-3.5 text-emerald-950 stroke-[3]" />
+                      <span>บันทึกสำเร็จ!</span>
+                    </>
+                  ) : (
+                    <>
+                      <Save className="w-3.5 h-3.5 stroke-[2.2]" />
+                      <span>บันทึกข้อมูล</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
