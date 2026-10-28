@@ -33,6 +33,8 @@ import {
   Calendar,
   CalendarClock,
   AlertCircle,
+  Bell,
+  BellRing,
 } from "lucide-react";
 
 interface SalesSystemPageProps {
@@ -65,11 +67,23 @@ function formatThaiDateShort(dateStr?: string): string {
   }
 }
 
-// Helper to check follow-up urgency
-function getFollowUpUrgency(
-  dateStr?: string
-): "today" | "overdue" | "upcoming" | "none" {
-  if (!dateStr) return "none";
+export type FollowUpUrgency =
+  | "overdue"
+  | "today"
+  | "tomorrow"
+  | "approaching"
+  | "upcoming"
+  | "none";
+
+export interface FollowUpInfo {
+  urgency: FollowUpUrgency;
+  diffDays: number;
+  label: string;
+}
+
+// Helper to check detailed follow-up reminder info
+function getClinicFollowUpInfo(dateStr?: string): FollowUpInfo {
+  if (!dateStr) return { urgency: "none", diffDays: 9999, label: "" };
   try {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -77,11 +91,42 @@ function getFollowUpUrgency(
     target.setHours(0, 0, 0, 0);
     const diffTime = target.getTime() - today.getTime();
     const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
-    if (diffDays < 0) return "overdue";
-    if (diffDays === 0) return "today";
-    return "upcoming";
+
+    if (diffDays < 0) {
+      return {
+        urgency: "overdue",
+        diffDays,
+        label: `เลยกำหนด ${Math.abs(diffDays)} วัน`,
+      };
+    }
+    if (diffDays === 0) {
+      return {
+        urgency: "today",
+        diffDays: 0,
+        label: "ถึงกำหนดวันนี้!",
+      };
+    }
+    if (diffDays === 1) {
+      return {
+        urgency: "tomorrow",
+        diffDays: 1,
+        label: "นัดหมายพรุ่งนี้!",
+      };
+    }
+    if (diffDays <= 3) {
+      return {
+        urgency: "approaching",
+        diffDays,
+        label: `ใกล้ถึงนัด (อีก ${diffDays} วัน)`,
+      };
+    }
+    return {
+      urgency: "upcoming",
+      diffDays,
+      label: `นัดติดตาม ${formatThaiDateShort(dateStr)}`,
+    };
   } catch {
-    return "upcoming";
+    return { urgency: "upcoming", diffDays: 999, label: dateStr };
   }
 }
 
@@ -140,6 +185,11 @@ export default function SalesSystemPage({
   const [saveSuccess, setSaveSuccess] = useState<boolean>(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
+  // Section 4: Reminders Notification & Filter States
+  const [showRemindersModal, setShowRemindersModal] = useState<boolean>(false);
+  const [filterFollowUpOnly, setFilterFollowUpOnly] = useState<boolean>(false);
+  const [remindersTab, setRemindersTab] = useState<"urgent" | "all" | "overdue" | "today">("urgent");
+
   // Fast shortcut to set follow-up date (e.g. +1, +3, +7 days from today)
   const setFollowUpDaysFromNow = (days: number) => {
     const d = new Date();
@@ -150,9 +200,9 @@ export default function SalesSystemPage({
     setFormNextFollowUp(`${yyyy}-${mm}-${dd}`);
   };
 
-  // Lock background scroll when CRM modal is open
+  // Lock background scroll when CRM modal or Reminders modal is open
   useEffect(() => {
-    if (editingClinic) {
+    if (editingClinic || showRemindersModal) {
       document.body.style.overflow = "hidden";
     } else {
       document.body.style.overflow = "";
@@ -160,7 +210,7 @@ export default function SalesSystemPage({
     return () => {
       document.body.style.overflow = "";
     };
-  }, [editingClinic]);
+  }, [editingClinic, showRemindersModal]);
 
   // 1. Cascading Province list: if category is selected, show province counts for that category
   const provinceList = useMemo(() => {
@@ -242,7 +292,36 @@ export default function SalesSystemPage({
     };
   }, [filteredByProvAndCat]);
 
-  // 5. Final filtered clinics taking selected websiteStatus card + Search Query into account
+  // Pre-calculate follow-up reminders across all clinics
+  const followUpReminders = useMemo(() => {
+    return clinics
+      .filter((c) => Boolean(c.nextFollowUpDate))
+      .map((c) => ({
+        clinic: c,
+        info: getClinicFollowUpInfo(c.nextFollowUpDate),
+      }))
+      .sort((a, b) => a.info.diffDays - b.info.diffDays);
+  }, [clinics]);
+
+  const urgentReminders = useMemo(() => {
+    return followUpReminders.filter((r) => r.info.diffDays <= 3);
+  }, [followUpReminders]);
+
+  const overdueReminders = useMemo(() => {
+    return followUpReminders.filter((r) => r.info.urgency === "overdue");
+  }, [followUpReminders]);
+
+  const todayReminders = useMemo(() => {
+    return followUpReminders.filter((r) => r.info.urgency === "today");
+  }, [followUpReminders]);
+
+  const approachingReminders = useMemo(() => {
+    return followUpReminders.filter(
+      (r) => r.info.urgency === "tomorrow" || r.info.urgency === "approaching"
+    );
+  }, [followUpReminders]);
+
+  // 5. Final filtered clinics taking selected websiteStatus card + Search Query + Follow-up filter into account
   const finalFilteredClinics = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
 
@@ -252,6 +331,11 @@ export default function SalesSystemPage({
         if (selectedStatus !== "all") {
           const s = c.websiteStatus || "ไม่ระบุ";
           if (s !== selectedStatus) return false;
+        }
+
+        // Follow-up only filter
+        if (filterFollowUpOnly && !c.nextFollowUpDate) {
+          return false;
         }
 
         // Search query filter (Name, Phone, District, Contact Names, Notes)
@@ -290,12 +374,12 @@ export default function SalesSystemPage({
         }
         return 0;
       });
-  }, [filteredByProvAndCat, selectedStatus, searchQuery, sortBy]);
+  }, [filteredByProvAndCat, selectedStatus, searchQuery, sortBy, filterFollowUpOnly]);
 
   // Reset pagination when filters or search change
   useMemo(() => {
     setVisibleCount(PAGE_SIZE);
-  }, [selectedProvince, selectedCategory, selectedStatus, searchQuery, sortBy]);
+  }, [selectedProvince, selectedCategory, selectedStatus, searchQuery, sortBy, filterFollowUpOnly]);
 
   const displayedClinics = useMemo(() => {
     return finalFilteredClinics.slice(0, visibleCount);
@@ -425,17 +509,96 @@ export default function SalesSystemPage({
     selectedProvince !== "all" ||
     selectedCategory !== "all" ||
     selectedStatus !== "all" ||
+    filterFollowUpOnly ||
     searchQuery.trim() !== "";
 
   const handleResetFilters = () => {
     setSelectedProvince("all");
     setSelectedCategory("all");
     setSelectedStatus("all");
+    setFilterFollowUpOnly(false);
     setSearchQuery("");
   };
 
   return (
     <div className="space-y-4 sm:space-y-6">
+      {/* =========================================================================
+          REMINDER CENTER BANNER: Follow-up Alerts (Overdue / Today / Approaching 1-3d)
+         ========================================================================= */}
+      {urgentReminders.length > 0 && (
+        <div className="relative overflow-hidden rounded-2xl sm:rounded-3xl p-3.5 sm:p-5 bg-gradient-to-r from-amber-950/40 via-[#071322]/95 to-rose-950/30 border border-amber-500/40 shadow-[0_0_25px_rgba(245,158,11,0.2)]">
+          {/* Ambient Glow Orb */}
+          <div className="absolute top-0 right-0 w-48 h-48 bg-amber-500/10 rounded-full blur-3xl pointer-events-none" />
+
+          <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-3 sm:gap-4">
+            {/* Left: Icon & Alert Title & Badges */}
+            <div className="flex items-start sm:items-center gap-3 min-w-0">
+              <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-xl bg-gradient-to-br from-amber-400 to-orange-500 text-slate-950 flex items-center justify-center shrink-0 shadow-[0_0_15px_rgba(245,158,11,0.5)]">
+                <BellRing className="w-5 h-5 sm:w-6 sm:h-6 animate-bounce" />
+              </div>
+
+              <div className="space-y-1 min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <h3 className="text-xs sm:text-sm font-black text-white tracking-wide flex items-center gap-1.5">
+                    <span>แจ้งเตือนนัดหมายติดตามผล</span>
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-amber-500/20 text-amber-300 border border-amber-400/40">
+                      {urgentReminders.length} คลินิกที่ต้องติดต่อ
+                    </span>
+                  </h3>
+                </div>
+
+                {/* Urgency Counter Chips */}
+                <div className="flex flex-wrap items-center gap-1.5 text-[10px] sm:text-[11px]">
+                  {overdueReminders.length > 0 && (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-rose-500/20 text-rose-300 border border-rose-500/40 font-bold">
+                      <AlertCircle className="w-2.5 h-2.5" />
+                      เลยกำหนด {overdueReminders.length} คลินิก
+                    </span>
+                  )}
+                  {todayReminders.length > 0 && (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-500/25 text-amber-200 border border-amber-400/60 font-bold animate-pulse">
+                      <CalendarClock className="w-2.5 h-2.5 text-amber-300" />
+                      ถึงกำหนดวันนี้ {todayReminders.length} คลินิก
+                    </span>
+                  )}
+                  {approachingReminders.length > 0 && (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-orange-500/20 text-orange-200 border border-orange-400/50 font-bold">
+                      <Clock className="w-2.5 h-2.5" />
+                      ใกล้ถึงนัด (1-3 วัน) {approachingReminders.length} คลินิก
+                    </span>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Right: Quick Action Buttons */}
+            <div className="flex items-center gap-2 shrink-0 pt-2 sm:pt-0 border-t sm:border-t-0 border-white/10">
+              <button
+                type="button"
+                onClick={() => setFilterFollowUpOnly(!filterFollowUpOnly)}
+                className={`px-3 py-1.5 sm:px-3.5 sm:py-2 rounded-xl text-xs font-bold border transition-all active:scale-95 flex items-center gap-1.5 ${
+                  filterFollowUpOnly
+                    ? "bg-[#2bccaf] text-slate-950 border-[#2bccaf] shadow-[0_0_15px_rgba(43,204,175,0.4)]"
+                    : "bg-white/5 hover:bg-white/15 text-slate-200 border-white/10"
+                }`}
+              >
+                <ListFilter className="w-3.5 h-3.5" />
+                <span>{filterFollowUpOnly ? "แสดงทุกคลินิก" : "กรองในรายการ"}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setShowRemindersModal(true)}
+                className="px-3.5 py-1.5 sm:px-4 sm:py-2 rounded-xl text-xs font-black bg-gradient-to-r from-amber-400 to-orange-400 hover:from-amber-300 hover:to-orange-300 text-slate-950 shadow-[0_0_15px_rgba(245,158,11,0.4)] transition-all active:scale-95 flex items-center gap-1.5"
+              >
+                <Bell className="w-3.5 h-3.5" />
+                <span>ดูคิวนัดหมาย ({urgentReminders.length})</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* =========================================================================
           SECTION 1: Filters (Category & Province) + websiteStatus Compact Grid
          ========================================================================= */}
@@ -699,6 +862,26 @@ export default function SalesSystemPage({
               <ArrowUpDown className="w-3 h-3 text-slate-400 pointer-events-none absolute right-2 top-1/2 -translate-y-1/2" />
             </div>
 
+            {/* Bell Reminders Trigger Button */}
+            <button
+              type="button"
+              onClick={() => setShowRemindersModal(true)}
+              title="ดูรายการนัดหมายติดตามผล"
+              className={`relative px-2.5 py-1.5 sm:py-2 rounded-xl text-xs font-bold border transition-all active:scale-95 flex items-center gap-1.5 shrink-0 ${
+                urgentReminders.length > 0
+                  ? "bg-amber-500/20 text-amber-200 border-amber-400/50 hover:bg-amber-500/30 shadow-[0_0_12px_rgba(245,158,11,0.25)]"
+                  : "bg-white/5 text-slate-400 border-white/10 hover:text-white"
+              }`}
+            >
+              <Bell className="w-3.5 h-3.5 text-amber-400" />
+              <span className="hidden sm:inline">นัดติดตาม</span>
+              {urgentReminders.length > 0 && (
+                <span className="min-w-[18px] h-[18px] px-1 rounded-full bg-rose-500 text-white text-[10px] font-black flex items-center justify-center animate-pulse">
+                  {urgentReminders.length}
+                </span>
+              )}
+            </button>
+
             {hasActiveFilter && (
               <button
                 onClick={handleResetFilters}
@@ -726,7 +909,7 @@ export default function SalesSystemPage({
                 SALES_STATUS_OPTIONS.find((o) => o.label === currentSalesStatus) ||
                 SALES_STATUS_OPTIONS[0];
 
-              const followUpUrgency = getFollowUpUrgency(clinic.nextFollowUpDate);
+              const followUpInfo = getClinicFollowUpInfo(clinic.nextFollowUpDate);
               const hasCRMData =
                 clinic.contactName1 ||
                 clinic.contactName2 ||
@@ -757,25 +940,37 @@ export default function SalesSystemPage({
                         {clinic.nextFollowUpDate && (
                           <span
                             className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full border font-bold ${
-                              followUpUrgency === "today"
+                              followUpInfo.urgency === "today"
                                 ? "bg-amber-500/25 text-amber-200 border-amber-400/60 animate-pulse shadow-[0_0_10px_rgba(251,191,36,0.3)]"
-                                : followUpUrgency === "overdue"
-                                ? "bg-rose-500/25 text-rose-200 border-rose-400/60"
+                                : followUpInfo.urgency === "overdue"
+                                ? "bg-rose-500/25 text-rose-200 border-rose-400/60 shadow-[0_0_8px_rgba(244,63,94,0.2)]"
+                                : followUpInfo.urgency === "tomorrow"
+                                ? "bg-orange-500/25 text-orange-200 border-orange-400/60 shadow-[0_0_10px_rgba(249,115,22,0.3)]"
+                                : followUpInfo.urgency === "approaching"
+                                ? "bg-yellow-500/20 text-yellow-200 border-yellow-400/50"
                                 : "bg-cyan-500/20 text-cyan-200 border-cyan-400/40"
                             }`}
                           >
-                            {followUpUrgency === "today" ? (
+                            {followUpInfo.urgency === "today" ? (
                               <CalendarClock className="w-2.5 h-2.5 text-amber-300" />
-                            ) : followUpUrgency === "overdue" ? (
+                            ) : followUpInfo.urgency === "overdue" ? (
                               <AlertCircle className="w-2.5 h-2.5 text-rose-300" />
+                            ) : followUpInfo.urgency === "tomorrow" ? (
+                              <BellRing className="w-2.5 h-2.5 text-orange-300" />
+                            ) : followUpInfo.urgency === "approaching" ? (
+                              <Clock className="w-2.5 h-2.5 text-yellow-300" />
                             ) : (
                               <Calendar className="w-2.5 h-2.5 text-cyan-300" />
                             )}
                             <span>
-                              {followUpUrgency === "today"
-                                ? `ติดตาม: วันนี้ (${formatThaiDateShort(clinic.nextFollowUpDate)})`
-                                : followUpUrgency === "overdue"
-                                ? `เกินกำหนด (${formatThaiDateShort(clinic.nextFollowUpDate)})`
+                              {followUpInfo.urgency === "today"
+                                ? `⚡ ถึงกำหนดวันนี้! (${formatThaiDateShort(clinic.nextFollowUpDate)})`
+                                : followUpInfo.urgency === "overdue"
+                                ? `🚨 เลยกำหนด ${Math.abs(followUpInfo.diffDays)} วัน (${formatThaiDateShort(clinic.nextFollowUpDate)})`
+                                : followUpInfo.urgency === "tomorrow"
+                                ? `⏰ นัดพรุ่งนี้! (${formatThaiDateShort(clinic.nextFollowUpDate)})`
+                                : followUpInfo.urgency === "approaching"
+                                ? `⏰ ใกล้ถึงนัด (อีก ${followUpInfo.diffDays} วัน)`
                                 : `นัดติดตาม ${formatThaiDateShort(clinic.nextFollowUpDate)}`}
                             </span>
                           </span>
@@ -844,18 +1039,24 @@ export default function SalesSystemPage({
                             {clinic.nextFollowUpDate && (
                               <span
                                 className={`inline-flex items-center gap-1 font-bold ${
-                                  followUpUrgency === "today"
-                                    ? "text-amber-300"
-                                    : followUpUrgency === "overdue"
+                                  followUpInfo.urgency === "today"
+                                    ? "text-amber-300 animate-pulse"
+                                    : followUpInfo.urgency === "overdue"
                                     ? "text-rose-300"
+                                    : followUpInfo.urgency === "tomorrow"
+                                    ? "text-orange-300"
+                                    : followUpInfo.urgency === "approaching"
+                                    ? "text-yellow-300"
                                     : "text-cyan-300"
                                 }`}
                               >
                                 <CalendarClock className="w-3 h-3 text-[#2bccaf]" />
                                 <strong>นัดติดตาม:</strong>{" "}
                                 {formatThaiDateShort(clinic.nextFollowUpDate)}
-                                {followUpUrgency === "today" && " (วันนี้!)"}
-                                {followUpUrgency === "overdue" && " (เลยกำหนด)"}
+                                {followUpInfo.urgency === "today" && " (⚡ ถึงกำหนดวันนี้!)"}
+                                {followUpInfo.urgency === "overdue" && ` (🚨 เลยกำหนด ${Math.abs(followUpInfo.diffDays)} วัน)`}
+                                {followUpInfo.urgency === "tomorrow" && " (⏰ นัดพรุ่งนี้!)"}
+                                {followUpInfo.urgency === "approaching" && ` (⏰ อีก ${followUpInfo.diffDays} วัน)`}
                               </span>
                             )}
                           </div>
@@ -1222,6 +1423,289 @@ export default function SalesSystemPage({
                   )}
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* =========================================================================
+          SECTION 4: FOLLOW-UP REMINDERS CENTER MODAL (ศูนย์แจ้งเตือนนัดหมายติดตามผล)
+         ========================================================================= */}
+      {showRemindersModal && (
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-200"
+          onClick={() => setShowRemindersModal(false)}
+        >
+          <div
+            className="glass-panel-3d w-full max-w-xl max-h-[90vh] sm:max-h-[85vh] rounded-2xl sm:rounded-3xl border border-white/20 shadow-2xl flex flex-col overflow-hidden animate-in zoom-in-95 duration-200"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* 1. PINNED MODAL HEADER */}
+            <div className="px-4 py-3.5 sm:px-6 sm:py-4 border-b border-white/10 bg-[#06101c]/98 backdrop-blur-md shrink-0 flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-gradient-to-br from-amber-400 to-orange-500 text-slate-950 flex items-center justify-center shrink-0 shadow-[0_0_12px_rgba(245,158,11,0.5)]">
+                  <BellRing className="w-4 h-4 sm:w-5 sm:h-5" />
+                </div>
+                <div className="min-w-0">
+                  <h3 className="text-sm sm:text-base font-black text-white tracking-wide truncate">
+                    ศูนย์แจ้งเตือนนัดหมายติดตามผล
+                  </h3>
+                  <p className="text-[10px] sm:text-xs text-slate-400 truncate">
+                    มี {followUpReminders.length} คลินิกที่มีนัดหมาย • {urgentReminders.length} รายการที่ต้องติดต่อด่วน
+                  </p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setShowRemindersModal(false)}
+                className="w-8 h-8 rounded-full bg-white/5 hover:bg-white/15 text-slate-400 hover:text-white flex items-center justify-center transition-all shrink-0 active:scale-90"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* 2. PINNED FILTER TABS */}
+            <div className="px-4 py-2 border-b border-white/10 bg-[#081526]/90 flex items-center gap-1.5 overflow-x-auto shrink-0 scrollbar-none">
+              <button
+                type="button"
+                onClick={() => setRemindersTab("urgent")}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all shrink-0 flex items-center gap-1.5 ${
+                  remindersTab === "urgent"
+                    ? "bg-amber-500 text-slate-950 shadow-md"
+                    : "bg-white/5 text-slate-400 hover:text-white hover:bg-white/10"
+                }`}
+              >
+                <span>ด่วน (1-3 วัน & เลยกำหนด)</span>
+                <span
+                  className={`px-1.5 py-0.2 rounded-full text-[10px] font-black ${
+                    remindersTab === "urgent"
+                      ? "bg-slate-950 text-amber-300"
+                      : "bg-white/10 text-slate-300"
+                  }`}
+                >
+                  {urgentReminders.length}
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setRemindersTab("today")}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all shrink-0 flex items-center gap-1.5 ${
+                  remindersTab === "today"
+                    ? "bg-amber-400 text-slate-950 shadow-md"
+                    : "bg-white/5 text-slate-400 hover:text-white hover:bg-white/10"
+                }`}
+              >
+                <span>ถึงกำหนดวันนี้</span>
+                <span
+                  className={`px-1.5 py-0.2 rounded-full text-[10px] font-black ${
+                    remindersTab === "today"
+                      ? "bg-slate-950 text-amber-300"
+                      : "bg-white/10 text-slate-300"
+                  }`}
+                >
+                  {todayReminders.length}
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setRemindersTab("overdue")}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all shrink-0 flex items-center gap-1.5 ${
+                  remindersTab === "overdue"
+                    ? "bg-rose-500 text-white shadow-md"
+                    : "bg-white/5 text-slate-400 hover:text-white hover:bg-white/10"
+                }`}
+              >
+                <span>เลยกำหนด</span>
+                <span
+                  className={`px-1.5 py-0.2 rounded-full text-[10px] font-black ${
+                    remindersTab === "overdue"
+                      ? "bg-black/40 text-rose-200"
+                      : "bg-white/10 text-slate-300"
+                  }`}
+                >
+                  {overdueReminders.length}
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setRemindersTab("all")}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all shrink-0 flex items-center gap-1.5 ${
+                  remindersTab === "all"
+                    ? "bg-[#2bccaf] text-slate-950 shadow-md"
+                    : "bg-white/5 text-slate-400 hover:text-white hover:bg-white/10"
+                }`}
+              >
+                <span>ทั้งหมด</span>
+                <span
+                  className={`px-1.5 py-0.2 rounded-full text-[10px] font-black ${
+                    remindersTab === "all"
+                      ? "bg-slate-950 text-[#6fffe9]"
+                      : "bg-white/10 text-slate-300"
+                  }`}
+                >
+                  {followUpReminders.length}
+                </span>
+              </button>
+            </div>
+
+            {/* 3. SCROLLABLE REMINDERS LIST */}
+            <div className="flex-1 overflow-y-auto overscroll-contain p-4 sm:p-5 space-y-3 min-h-[220px]">
+              {(() => {
+                const list =
+                  remindersTab === "urgent"
+                    ? urgentReminders
+                    : remindersTab === "today"
+                    ? todayReminders
+                    : remindersTab === "overdue"
+                    ? overdueReminders
+                    : followUpReminders;
+
+                if (list.length === 0) {
+                  return (
+                    <div className="py-12 text-center space-y-2">
+                      <div className="w-12 h-12 rounded-2xl bg-white/5 text-slate-400 flex items-center justify-center mx-auto">
+                        <CheckCircle2 className="w-6 h-6 text-[#2bccaf]" />
+                      </div>
+                      <p className="text-sm font-bold text-slate-300">
+                        ไม่มีรายการนัดหมายในหมวดนี้
+                      </p>
+                      <p className="text-xs text-slate-500">
+                        คุณติดตามผลคลินิกในหมวดนี้ครบถ้วนแล้ว
+                      </p>
+                    </div>
+                  );
+                }
+
+                return list.map(({ clinic, info }) => (
+                  <div
+                    key={clinic.id}
+                    className="p-3 sm:p-3.5 rounded-2xl bg-[#06101c]/90 border border-white/10 hover:border-[#2bccaf]/50 transition-all space-y-2 group"
+                  >
+                    {/* Top row: Urgency & Location */}
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <span
+                        className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] sm:text-xs font-black border ${
+                          info.urgency === "today"
+                            ? "bg-amber-500/25 text-amber-200 border-amber-400/60 animate-pulse"
+                            : info.urgency === "overdue"
+                            ? "bg-rose-500/25 text-rose-200 border-rose-400/60"
+                            : info.urgency === "tomorrow"
+                            ? "bg-orange-500/25 text-orange-200 border-orange-400/60"
+                            : info.urgency === "approaching"
+                            ? "bg-yellow-500/20 text-yellow-200 border-yellow-400/50"
+                            : "bg-cyan-500/20 text-cyan-200 border-cyan-400/40"
+                        }`}
+                      >
+                        {info.urgency === "today" ? (
+                          <CalendarClock className="w-3 h-3 text-amber-300" />
+                        ) : info.urgency === "overdue" ? (
+                          <AlertCircle className="w-3 h-3 text-rose-300" />
+                        ) : info.urgency === "tomorrow" ? (
+                          <BellRing className="w-3 h-3 text-orange-300" />
+                        ) : (
+                          <Calendar className="w-3 h-3 text-cyan-300" />
+                        )}
+                        <span>
+                          {info.label} ({formatThaiDateShort(clinic.nextFollowUpDate)})
+                        </span>
+                      </span>
+
+                      <span className="text-[10px] text-slate-400">
+                        จ.{clinic.province}{" "}
+                        {clinic.district ? `(${clinic.district})` : ""}
+                      </span>
+                    </div>
+
+                    {/* Clinic Name & Category */}
+                    <div>
+                      <h4 className="text-sm font-extrabold text-white group-hover:text-[#6fffe9] transition-colors leading-snug">
+                        {clinic.name}
+                      </h4>
+                      <p className="text-[11px] text-slate-400 mt-0.5">
+                        {formatCategoryLabel(clinic.category || "")}
+                      </p>
+                    </div>
+
+                    {/* Contacts & Notes Preview */}
+                    {(clinic.contactName1 ||
+                      clinic.contactName2 ||
+                      clinic.notes) && (
+                      <div className="p-2 rounded-xl bg-white/[0.03] border border-white/5 text-[11px] space-y-1">
+                        <div className="flex flex-wrap items-center gap-2 text-slate-300">
+                          {clinic.contactName1 && (
+                            <span className="inline-flex items-center gap-1 text-[#6fffe9]">
+                              <User className="w-3 h-3 text-[#2bccaf]" />
+                              <strong>{clinic.contactName1}</strong>
+                            </span>
+                          )}
+                          {clinic.contactName2 && (
+                            <span className="inline-flex items-center gap-1 text-slate-300">
+                              <Users className="w-3 h-3 text-cyan-400" />
+                              <span>{clinic.contactName2}</span>
+                            </span>
+                          )}
+                        </div>
+                        {clinic.notes && (
+                          <p className="text-[11px] text-slate-400 italic line-clamp-1">
+                            📝 &ldquo;{clinic.notes}&rdquo;
+                          </p>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Quick Action Buttons */}
+                    <div className="flex items-center justify-end gap-2 pt-1">
+                      {clinic.phone && (
+                        <a
+                          href={`tel:${clinic.phone}`}
+                          className="px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/15 text-slate-200 border border-white/10 text-xs font-bold inline-flex items-center gap-1.5 active:scale-95 transition-all"
+                        >
+                          <Phone className="w-3.5 h-3.5 text-[#2bccaf]" />
+                          <span>{clinic.phone}</span>
+                        </a>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowRemindersModal(false);
+                          handleOpenCRMModal(clinic);
+                        }}
+                        className="px-3 py-1.5 rounded-xl bg-[#2bccaf]/20 hover:bg-[#2bccaf]/30 text-[#6fffe9] border border-[#2bccaf]/50 text-xs font-bold inline-flex items-center gap-1.5 active:scale-95 transition-all"
+                      >
+                        <ClipboardEdit className="w-3.5 h-3.5 text-[#2bccaf]" />
+                        <span>บันทึก CRM</span>
+                      </button>
+                    </div>
+                  </div>
+                ));
+              })()}
+            </div>
+
+            {/* 4. PINNED FOOTER */}
+            <div className="px-4 py-3 sm:px-6 sm:py-3.5 border-t border-white/10 bg-[#06101c]/98 backdrop-blur-md pb-safe shrink-0 flex items-center justify-between gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setFilterFollowUpOnly(true);
+                  setShowRemindersModal(false);
+                }}
+                className="text-xs text-[#6fffe9] hover:underline font-bold flex items-center gap-1"
+              >
+                <ListFilter className="w-3.5 h-3.5 text-[#2bccaf]" />
+                <span>กรองคลินิกกลุ่มนี้ในหน้ารายการ</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setShowRemindersModal(false)}
+                className="px-4 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-slate-200 text-xs font-bold transition-all active:scale-95"
+              >
+                ปิด
+              </button>
             </div>
           </div>
         </div>
