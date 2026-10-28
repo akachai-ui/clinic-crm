@@ -18,6 +18,7 @@ export interface ClinicLead {
   googleMapsUrl: string;
   websiteStatus: string;
   rowNumber?: number;
+  rawCategory?: string;
   updatedAt?: string;
   notes?: string;
 }

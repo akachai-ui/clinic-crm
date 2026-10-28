@@ -4,7 +4,7 @@ import { ClinicLead } from "@/types/clinic";
 
 const DB_NAME = "clinic_crm_cache_db";
 const STORE_NAME = "clinics_store";
-const CACHE_KEY = "all_clinics_v2";
+const CACHE_KEY = "all_clinics_v3";
 const UPDATES_COLLECTION = "clinic_updates";
 
 function openCacheDB(): Promise<IDBDatabase> {

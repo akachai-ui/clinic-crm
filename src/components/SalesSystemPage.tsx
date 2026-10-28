@@ -20,10 +20,10 @@ interface SalesSystemPageProps {
 
 // Clean helper to format long category names for mobile screens
 function formatCategoryLabel(cat: string): string {
-  if (cat.includes("ทันตกรรม")) return "คลินิกทันตกรรม (Dental)";
-  if (cat.includes("กายภาพบำบัด")) return "คลินิกกายภาพบำบัด (Physical Therapy)";
-  if (cat.includes("เสริมความงาม")) return "คลินิกเสริมความงาม (Aesthetic)";
-  if (cat.includes("เวชกรรม")) return "คลินิกเวชกรรม/เฉพาะทาง (Medical)";
+  if (cat.includes("ทันตกรรม")) return "คลินิกทันตกรรม";
+  if (cat.includes("กายภาพบำบัด")) return "คลินิกกายภาพบำบัด";
+  if (cat.includes("เสริมความงาม")) return "คลินิกเสริมความงาม";
+  if (cat.includes("เวชกรรม")) return "คลินิกเวชกรรม/เฉพาะทาง";
   return cat;
 }
 
