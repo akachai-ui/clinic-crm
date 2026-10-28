@@ -19,6 +19,7 @@ export interface ClinicLead {
   websiteStatus: string;
   rowNumber?: number;
   rawCategory?: string;
+  rawProvince?: string;
   updatedAt?: string;
   notes?: string;
 }
